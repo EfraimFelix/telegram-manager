@@ -1,0 +1,26 @@
+version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - nvm use 22
+        - corepack enable
+        - pnpm install --frozen-lockfile
+        - pnpm exec tsc --project amplify/tsconfig.json
+        - pnpm exec tsx --test amplify/tests/*.test.ts
+        - pnpm exec ampx pipeline-deploy --branch "$AWS_BRANCH" --app-id "$AWS_APP_ID"
+        - node scripts/write-runtime-config.mjs
+frontend:
+  phases:
+    build:
+      commands:
+        - pnpm exec tsx --env-file=.env.production scripts/migrate.ts
+        - pnpm build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - .next/cache/**/*
+      - node_modules/**/*
