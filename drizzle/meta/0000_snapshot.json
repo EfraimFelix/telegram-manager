@@ -1,5 +1,5 @@
 {
-  "id": "32bdbff7-eab9-4dc5-82a0-2f145d5119c2",
+  "id": "f3c3b7ab-14c2-430c-be79-b3efcd2ccf4d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -163,7 +163,7 @@
           "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "external_id": {
           "name": "external_id",
@@ -188,6 +188,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "bot_connection_scope",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ORGANIZATION'"
         },
         "status": {
           "name": "status",
@@ -443,6 +451,250 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.community_connection_attempts": {
+      "name": "community_connection_attempts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bot_connection_id": {
+          "name": "bot_connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "community_connection_attempt_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "telegram_user_id": {
+          "name": "telegram_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "candidate_external_id": {
+          "name": "candidate_external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "candidate_name": {
+          "name": "candidate_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "candidate_username": {
+          "name": "candidate_username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "candidate_chat_type": {
+          "name": "candidate_chat_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bot_is_admin": {
+          "name": "bot_is_admin",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "user_is_admin": {
+          "name": "user_is_admin",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "community_id": {
+          "name": "community_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "connection_attempt_org_idx": {
+          "name": "connection_attempt_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "connection_attempt_state_idx": {
+          "name": "connection_attempt_state_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "community_connection_attempts_organization_id_organizations_id_fk": {
+          "name": "community_connection_attempts_organization_id_organizations_id_fk",
+          "tableFrom": "community_connection_attempts",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "community_connection_attempts_bot_connection_id_bot_connections_id_fk": {
+          "name": "community_connection_attempts_bot_connection_id_bot_connections_id_fk",
+          "tableFrom": "community_connection_attempts",
+          "tableTo": "bot_connections",
+          "columnsFrom": [
+            "bot_connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "community_connection_attempts_created_by_users_id_fk": {
+          "name": "community_connection_attempts_created_by_users_id_fk",
+          "tableFrom": "community_connection_attempts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "community_connection_attempts_community_id_communities_id_fk": {
+          "name": "community_connection_attempts_community_id_communities_id_fk",
+          "tableFrom": "community_connection_attempts",
+          "tableTo": "communities",
+          "columnsFrom": [
+            "community_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "community_connection_attempts_code_hash_unique": {
+          "name": "community_connection_attempts_code_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code_hash"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2052,6 +2304,25 @@
         "SUCCESS",
         "FAILED",
         "SKIPPED"
+      ]
+    },
+    "public.bot_connection_scope": {
+      "name": "bot_connection_scope",
+      "schema": "public",
+      "values": [
+        "SYSTEM",
+        "ORGANIZATION"
+      ]
+    },
+    "public.community_connection_attempt_state": {
+      "name": "community_connection_attempt_state",
+      "schema": "public",
+      "values": [
+        "PENDING",
+        "DISCOVERED",
+        "COMPLETED",
+        "EXPIRED",
+        "FAILED"
       ]
     },
     "public.moderation_decision_state": {

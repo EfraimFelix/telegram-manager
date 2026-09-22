@@ -4,6 +4,11 @@ export type DashboardData = {
   user: { name: string; email: string };
   organization: { id: string; name: string };
   bot: { id: string; username: string; status: string } | null;
+  connectionAttempt: {
+    id: string; state: string; expiresAt: string;
+    candidate: { externalId: string; name: string | null; username: string | null; chatType: string | null; botIsAdmin: boolean; userIsAdmin: boolean } | null;
+    errorCode: string | null; errorMessage: string | null;
+  } | null;
   communities: {
     id: string; name: string; externalId: string; username: string | null; status: string; moderationEnabled: boolean; telegramChatType: string;
     warningWindowDays: number; publicWarningsEnabled: boolean; warningMuteAt: number | null; warningMuteDurationSeconds: number; warningBanAt: number | null; warningBanDurationSeconds: number | null;

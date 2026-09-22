@@ -1,29 +1,40 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../../db";
-import { botConnections, communities, moderationActions, moderationDecisions, moderationFeedback, moderationMessages, moderationRuleEvaluations, moderationRules, moderationWarnings, organizations, ruleTestUsage, usageMonthly } from "../../db/schema";
-import { required } from "../../lib/config";
+import { botConnections, communities, communityConnectionAttempts, moderationActions, moderationDecisions, moderationFeedback, moderationMessages, moderationRuleEvaluations, moderationRules, moderationWarnings, organizations, ruleTestUsage, usageMonthly } from "../../db/schema";
 import { evaluateRules } from "../moderation/jev";
 import { decide } from "../moderation/decision";
 import { telegram } from "../telegram/client";
-import { decryptToken, encryptToken, secretHash, webhookSecret } from "../telegram/crypto";
+import { decryptToken, secretHash } from "../telegram/crypto";
 import { FREE_LIMITS, monthStart } from "../usage/limits";
 import { lockOrganization, type Actor } from "./access";
 import type { DashboardData, TestRulesResult } from "./contracts";
 import type { DashboardCommand } from "./validation";
 import { AppError } from "./http";
 
-type TelegramUser = { id: number; is_bot: boolean; username?: string };
 type TelegramChat = { id: number; type: string; title?: string; username?: string };
 type TelegramMember = { status: string; can_delete_messages?: boolean; can_restrict_members?: boolean };
+const CONNECTION_TTL_MS = 15 * 60 * 1_000;
+const STARTER_RULE = { name: "Spam & promotion", ruleText: "Flag unsolicited advertisements, repeated promotional messages, and referral spam. Allow relevant links shared as part of a genuine conversation." };
+
+function isAdmin(member: TelegramMember | undefined) { return member?.status === "administrator" || member?.status === "creator"; }
+
+function permissionError(chatType: string, bot: TelegramMember | undefined, user: TelegramMember | undefined) {
+  if (!isAdmin(user)) return { code: "USER_PERMISSIONS", message: "The Telegram account that started the connection must be a group administrator." };
+  if (!bot || !isAdmin(bot)) return { code: "BOT_PERMISSIONS", message: "Make the Telegram Manager bot an administrator in this group." };
+  if (bot.status !== "creator" && bot.can_delete_messages !== true) return { code: "BOT_DELETE_PERMISSION", message: "Grant the bot permission to delete messages." };
+  if (chatType === "supergroup" && bot.status !== "creator" && bot.can_restrict_members !== true) return { code: "BOT_RESTRICT_PERMISSION", message: "Grant the bot permission to restrict members." };
+  return null;
+}
 
 export async function dashboardData(actor: Actor, organizationId: string): Promise<DashboardData> {
   const db = getDb();
   const month = monthStart();
   const today = new Date().toISOString().slice(0, 10);
-  const [organization, bot, communityRows, ruleRows, usage, tests] = await Promise.all([
+  const [organization, bot, attempt, communityRows, ruleRows, usage, tests] = await Promise.all([
     db.select({ id: organizations.id, name: organizations.name }).from(organizations).where(eq(organizations.id, organizationId)).then(([row]) => row),
-    db.select({ id: botConnections.id, username: botConnections.username, status: botConnections.status }).from(botConnections).where(eq(botConnections.organizationId, organizationId)).then(([row]) => row ?? null),
+    db.select({ id: botConnections.id, username: botConnections.username, status: botConnections.status }).from(botConnections).where(eq(botConnections.scope, "SYSTEM")).then(([row]) => row ?? null),
+    db.select().from(communityConnectionAttempts).where(eq(communityConnectionAttempts.organizationId, organizationId)).orderBy(desc(communityConnectionAttempts.createdAt)).limit(1).then(([row]) => row ?? null),
     db.select().from(communities).where(eq(communities.organizationId, organizationId)).orderBy(communities.createdAt),
     db.select({ rule: moderationRules }).from(moderationRules).innerJoin(communities, eq(communities.id, moderationRules.communityId)).where(and(eq(communities.organizationId, organizationId), isNull(moderationRules.deletedAt))).orderBy(desc(moderationRules.priority)),
     db.select().from(usageMonthly).where(and(eq(usageMonthly.organizationId, organizationId), eq(usageMonthly.yearMonth, month))).then(([row]) => row),
@@ -51,6 +62,7 @@ export async function dashboardData(actor: Actor, organizationId: string): Promi
   const currentUsage = usage ?? emptyUsage;
   return {
     user: { name: actor.name, email: actor.email }, organization: organization ?? { id: organizationId, name: actor.name + "'s workspace" }, bot,
+    connectionAttempt: attempt ? { id: attempt.id, state: attempt.expiresAt <= new Date() && ["PENDING", "DISCOVERED"].includes(attempt.state) ? "EXPIRED" : attempt.state, expiresAt: attempt.expiresAt.toISOString(), candidate: attempt.candidateExternalId ? { externalId: attempt.candidateExternalId, name: attempt.candidateName, username: attempt.candidateUsername, chatType: attempt.candidateChatType, botIsAdmin: attempt.botIsAdmin, userIsAdmin: attempt.userIsAdmin } : null, errorCode: attempt.errorCode, errorMessage: attempt.errorMessage } : null,
     communities: communityRows.map(({ id, name, externalId, username, status, moderationEnabled, telegramChatType, warningWindowDays, publicWarningsEnabled, warningMuteAt, warningMuteDurationSeconds, warningBanAt, warningBanDurationSeconds }) => ({ id, name, externalId, username, status, moderationEnabled, telegramChatType, warningWindowDays, publicWarningsEnabled, warningMuteAt, warningMuteDurationSeconds, warningBanAt, warningBanDurationSeconds })),
     rules: ruleRows.map(({ rule }) => ({ id: rule.id, communityId: rule.communityId, name: rule.name, ruleText: rule.ruleText, action: rule.action, actionDurationSeconds: rule.actionDurationSeconds, deleteMessage: rule.deleteMessage, priority: rule.priority, enabled: rule.enabled })),
     usage: { ...currentUsage, testsToday: tests }, limits: { communities: FREE_LIMITS.communities, enabledRules: FREE_LIMITS.activeRules, messagesPerMonth: FREE_LIMITS.messages, testsPerDay: FREE_LIMITS.ruleTestsPerDay },
@@ -68,8 +80,8 @@ export async function dashboardData(actor: Actor, organizationId: string): Promi
 
 export async function executeDashboardCommand(actor: Actor, organizationId: string, command: DashboardCommand) {
   switch (command.action) {
-    case "connectBot": return connectBot(actor, organizationId, command.token);
-    case "addCommunity": return addCommunity(actor, organizationId, command.chatId);
+    case "startConnection": return startConnection(actor, organizationId);
+    case "confirmConnection": return confirmConnection(actor, organizationId, command.attemptId);
     case "toggleModeration": return toggleModeration(actor, organizationId, command.communityId, command.enabled);
     case "saveCommunitySettings": return saveCommunitySettings(actor, organizationId, command);
     case "saveRule": return saveRule(actor, organizationId, command);
@@ -79,20 +91,61 @@ export async function executeDashboardCommand(actor: Actor, organizationId: stri
   }
 }
 
-async function connectBot(actor: Actor, organizationId: string, token: string) {
-  const db = getDb(); const me = await telegram<TelegramUser>(token, "getMe");
-  if (!me.is_bot || !me.username) throw new AppError(400, "INVALID_BOT", "Telegram did not return a valid bot account.");
-  const encryptedToken = await encryptToken(token);
-  const botId = await db.transaction(async (tx) => { await lockOrganization(tx, organizationId, actor); const [claimed] = await tx.select().from(botConnections).where(eq(botConnections.externalId, String(me.id))); if (claimed && claimed.organizationId !== organizationId) throw new AppError(409, "BOT_IN_USE", "This bot is connected to another workspace."); const [current] = await tx.select().from(botConnections).where(eq(botConnections.organizationId, organizationId)); if (current && current.externalId !== String(me.id)) throw new AppError(409, "BOT_REPLACEMENT_UNSUPPORTED", "This workspace is already connected to a different bot."); const id = current?.id ?? randomUUID(); const values = { externalId: String(me.id), username: me.username!, encryptedToken, webhookSecretHash: secretHash(await webhookSecret(id)), status: "pending" }; if (current) await tx.update(botConnections).set(values).where(eq(botConnections.id, current.id)); else await tx.insert(botConnections).values({ id, organizationId, ...values }); return id; });
-  const base = required("WEBHOOK_BASE_URL").replace(/\/?$/, "/"); await telegram<boolean>(token, "setWebhook", { url: base + botId, secret_token: await webhookSecret(botId), allowed_updates: ["message", "edited_message"], max_connections: 20 }); await db.update(botConnections).set({ status: "active" }).where(eq(botConnections.id, botId)); return { ok: true } as const;
+async function startConnection(actor: Actor, organizationId: string) {
+  const db = getDb();
+  const [bot] = await db.select().from(botConnections).where(and(eq(botConnections.scope, "SYSTEM"), eq(botConnections.status, "active")));
+  if (!bot) throw new AppError(503, "SYSTEM_BOT_UNAVAILABLE", "The official Telegram Manager bot is not configured yet.");
+  const code = randomBytes(24).toString("base64url");
+  const expiresAt = new Date(Date.now() + CONNECTION_TTL_MS);
+  const attempt = await db.transaction(async (tx) => {
+    await lockOrganization(tx, organizationId, actor);
+    const [{ value: total }] = await tx.select({ value: count() }).from(communities).where(eq(communities.organizationId, organizationId));
+    if (total >= FREE_LIMITS.communities) throw new AppError(409, "COMMUNITY_LIMIT", "This workspace already has its community connected.");
+    const [created] = await tx.insert(communityConnectionAttempts).values({ organizationId, botConnectionId: bot.id, createdBy: actor.id, codeHash: secretHash(code), expiresAt }).returning({ id: communityConnectionAttempts.id, expiresAt: communityConnectionAttempts.expiresAt });
+    return created;
+  });
+  const startUrl = `https://t.me/${bot.username}?startgroup=${code}&admin=delete_messages+restrict_members`;
+  return { ok: true, attempt: { id: attempt.id, state: "PENDING", expiresAt: attempt.expiresAt.toISOString(), startUrl } } as const;
 }
 
-async function addCommunity(actor: Actor, organizationId: string, chatId: string) {
-  const db = getDb(); const [bot] = await db.select().from(botConnections).where(eq(botConnections.organizationId, organizationId)); if (!bot || bot.status !== "active") throw new AppError(409, "BOT_REQUIRED", "Connect the bot before adding a community.");
-  const token = await decryptToken(bot.encryptedToken); const chat = await telegram<TelegramChat>(token, "getChat", { chat_id: chatId }); if (!["group", "supergroup"].includes(chat.type)) throw new AppError(400, "INVALID_CHAT", "Choose a Telegram group or supergroup.");
-  const member = await telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(bot.externalId) }); if (!["administrator", "creator"].includes(member.status)) throw new AppError(400, "BOT_PERMISSIONS", "Make the bot an administrator before adding this community.");
-  await db.transaction(async (tx) => { await lockOrganization(tx, organizationId, actor); const [{ value: total }] = await tx.select({ value: count() }).from(communities).where(eq(communities.organizationId, organizationId)); if (total >= FREE_LIMITS.communities) throw new AppError(409, "COMMUNITY_LIMIT", "The free plan includes one community."); const [claimed] = await tx.select().from(communities).where(and(eq(communities.platform, "telegram"), eq(communities.externalId, String(chat.id)))); if (claimed) throw new AppError(409, "COMMUNITY_IN_USE", "This community is already connected."); await tx.insert(communities).values({ organizationId, botConnectionId: bot.id, externalId: String(chat.id), name: chat.title ?? chat.username ?? "Telegram community", username: chat.username, telegramChatType: chat.type }); });
-  return { ok: true } as const;
+async function confirmConnection(actor: Actor, organizationId: string, attemptId: string) {
+  const db = getDb();
+  const [attempt] = await db.select({ attempt: communityConnectionAttempts, bot: botConnections }).from(communityConnectionAttempts).innerJoin(botConnections, eq(botConnections.id, communityConnectionAttempts.botConnectionId)).where(and(eq(communityConnectionAttempts.id, attemptId), eq(communityConnectionAttempts.organizationId, organizationId)));
+  if (!attempt) throw new AppError(404, "CONNECTION_NOT_FOUND", "Connection attempt not found.");
+  if (attempt.attempt.state === "COMPLETED" && attempt.attempt.communityId) return { ok: true, communityId: attempt.attempt.communityId } as const;
+  if (!["PENDING", "DISCOVERED"].includes(attempt.attempt.state)) throw new AppError(409, "CONNECTION_UNAVAILABLE", "Start a new connection attempt.");
+  if (attempt.attempt.expiresAt <= new Date()) {
+    await db.update(communityConnectionAttempts).set({ state: "EXPIRED", errorCode: "EXPIRED", errorMessage: "This connection link expired." }).where(eq(communityConnectionAttempts.id, attemptId));
+    throw new AppError(409, "CONNECTION_EXPIRED", "This connection link expired. Start again.");
+  }
+  if (!attempt.attempt.candidateExternalId || !attempt.attempt.telegramUserId) throw new AppError(409, "CONNECTION_PENDING", "Open the Telegram link and choose the group first.");
+
+  const token = await decryptToken(attempt.bot.encryptedToken);
+  const chat = await telegram<TelegramChat>(token, "getChat", { chat_id: attempt.attempt.candidateExternalId });
+  const botMember = await telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.bot.externalId) });
+  const userMember = await telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.attempt.telegramUserId) });
+  const permission = permissionError(chat.type, botMember, userMember);
+  if (permission) {
+    await db.update(communityConnectionAttempts).set({ candidateName: chat.title ?? chat.username ?? "Telegram community", candidateUsername: chat.username, candidateChatType: chat.type, botIsAdmin: isAdmin(botMember), userIsAdmin: isAdmin(userMember), errorCode: permission.code, errorMessage: permission.message }).where(eq(communityConnectionAttempts.id, attemptId));
+    throw new AppError(409, permission.code, permission.message);
+  }
+
+  return db.transaction(async (tx) => {
+    await lockOrganization(tx, organizationId, actor);
+    const [current] = await tx.select().from(communityConnectionAttempts).where(eq(communityConnectionAttempts.id, attemptId)).for("update");
+    if (!current || current.state === "COMPLETED") return { ok: true, communityId: current?.communityId ?? null } as const;
+    const [{ value: total }] = await tx.select({ value: count() }).from(communities).where(eq(communities.organizationId, organizationId));
+    if (total >= FREE_LIMITS.communities) throw new AppError(409, "COMMUNITY_LIMIT", "This workspace already has its community connected.");
+    const [claimed] = await tx.select({ id: communities.id }).from(communities).where(and(eq(communities.platform, "telegram"), eq(communities.externalId, String(chat.id))));
+    if (claimed) {
+      await tx.update(communityConnectionAttempts).set({ state: "FAILED", errorCode: "COMMUNITY_IN_USE", errorMessage: "This group is already connected to another workspace." }).where(eq(communityConnectionAttempts.id, attemptId));
+      throw new AppError(409, "COMMUNITY_IN_USE", "This group is already connected to another workspace.");
+    }
+    const [community] = await tx.insert(communities).values({ organizationId, botConnectionId: attempt.bot.id, externalId: String(chat.id), name: chat.title ?? chat.username ?? "Telegram community", username: chat.username, telegramChatType: chat.type, moderationEnabled: true }).returning({ id: communities.id });
+    await tx.insert(moderationRules).values({ communityId: community.id, createdBy: actor.id, name: STARTER_RULE.name, ruleText: STARTER_RULE.ruleText, action: "WARN", actionDurationSeconds: null, deleteMessage: true, enabled: true });
+    await tx.update(communityConnectionAttempts).set({ state: "COMPLETED", communityId: community.id, candidateName: chat.title ?? chat.username ?? "Telegram community", candidateUsername: chat.username, candidateChatType: chat.type, botIsAdmin: true, userIsAdmin: true, errorCode: null, errorMessage: null, consumedAt: new Date() }).where(eq(communityConnectionAttempts.id, attemptId));
+    return { ok: true, communityId: community.id } as const;
+  });
 }
 
 async function verifyModerationPermissions(organizationId: string, communityId: string) {

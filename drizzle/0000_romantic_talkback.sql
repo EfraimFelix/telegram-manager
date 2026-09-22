@@ -1,7 +1,25 @@
-CREATE TYPE "public"."moderation_action_status" AS ENUM('PENDING', 'SUCCESS', 'FAILED', 'SKIPPED');--> statement-breakpoint
-CREATE TYPE "public"."moderation_decision_state" AS ENUM('SKIPPED', 'NO_MATCH', 'REVIEW', 'MATCHED');--> statement-breakpoint
-CREATE TYPE "public"."moderation_execution_action" AS ENUM('WARN', 'DELETE', 'MUTE', 'BAN');--> statement-breakpoint
-CREATE TYPE "public"."moderation_rule_action" AS ENUM('WARN', 'MUTE', 'BAN');--> statement-breakpoint
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = 'moderation_action_status') THEN
+    CREATE TYPE "public"."moderation_action_status" AS ENUM('PENDING', 'SUCCESS', 'FAILED', 'SKIPPED');
+  END IF;
+END $$;--> statement-breakpoint
+CREATE TYPE "public"."bot_connection_scope" AS ENUM('SYSTEM', 'ORGANIZATION');--> statement-breakpoint
+CREATE TYPE "public"."community_connection_attempt_state" AS ENUM('PENDING', 'DISCOVERED', 'COMPLETED', 'EXPIRED', 'FAILED');--> statement-breakpoint
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = 'moderation_decision_state') THEN
+    CREATE TYPE "public"."moderation_decision_state" AS ENUM('SKIPPED', 'NO_MATCH', 'REVIEW', 'MATCHED');
+  END IF;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = 'moderation_execution_action') THEN
+    CREATE TYPE "public"."moderation_execution_action" AS ENUM('WARN', 'DELETE', 'MUTE', 'BAN');
+  END IF;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = 'moderation_rule_action') THEN
+    CREATE TYPE "public"."moderation_rule_action" AS ENUM('WARN', 'MUTE', 'BAN');
+  END IF;
+END $$;--> statement-breakpoint
 CREATE TABLE "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -20,11 +38,12 @@ CREATE TABLE "accounts" (
 --> statement-breakpoint
 CREATE TABLE "bot_connections" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"organization_id" uuid NOT NULL,
+	"organization_id" uuid,
 	"external_id" text NOT NULL,
 	"username" text NOT NULL,
 	"encrypted_token" text NOT NULL,
 	"webhook_secret_hash" text NOT NULL,
+	"scope" "bot_connection_scope" DEFAULT 'ORGANIZATION' NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "bot_connections_external_id_unique" UNIQUE("external_id")
@@ -49,6 +68,30 @@ CREATE TABLE "communities" (
 	"warning_ban_duration_seconds" integer,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "community_connection_attempts" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" uuid NOT NULL,
+	"bot_connection_id" uuid NOT NULL,
+	"created_by" text NOT NULL,
+	"code_hash" text NOT NULL,
+	"state" "community_connection_attempt_state" DEFAULT 'PENDING' NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"telegram_user_id" text,
+	"candidate_external_id" text,
+	"candidate_name" text,
+	"candidate_username" text,
+	"candidate_chat_type" text,
+	"bot_is_admin" boolean DEFAULT false NOT NULL,
+	"user_is_admin" boolean DEFAULT false NOT NULL,
+	"error_code" text,
+	"error_message" text,
+	"community_id" uuid,
+	"consumed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "community_connection_attempts_code_hash_unique" UNIQUE("code_hash")
 );
 --> statement-breakpoint
 CREATE TABLE "moderation_actions" (
@@ -235,6 +278,10 @@ ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY
 ALTER TABLE "bot_connections" ADD CONSTRAINT "bot_connections_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "communities" ADD CONSTRAINT "communities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "communities" ADD CONSTRAINT "communities_bot_connection_id_bot_connections_id_fk" FOREIGN KEY ("bot_connection_id") REFERENCES "public"."bot_connections"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "community_connection_attempts" ADD CONSTRAINT "community_connection_attempts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "community_connection_attempts" ADD CONSTRAINT "community_connection_attempts_bot_connection_id_bot_connections_id_fk" FOREIGN KEY ("bot_connection_id") REFERENCES "public"."bot_connections"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "community_connection_attempts" ADD CONSTRAINT "community_connection_attempts_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "community_connection_attempts" ADD CONSTRAINT "community_connection_attempts_community_id_communities_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."communities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_actions" ADD CONSTRAINT "moderation_actions_decision_id_moderation_decisions_id_fk" FOREIGN KEY ("decision_id") REFERENCES "public"."moderation_decisions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_actions" ADD CONSTRAINT "moderation_actions_rule_id_moderation_rules_id_fk" FOREIGN KEY ("rule_id") REFERENCES "public"."moderation_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_decisions" ADD CONSTRAINT "moderation_decisions_message_id_moderation_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."moderation_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -260,6 +307,8 @@ CREATE UNIQUE INDEX "accounts_provider_idx" ON "accounts" USING btree ("provider
 CREATE UNIQUE INDEX "one_bot_per_organization" ON "bot_connections" USING btree ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "community_external_idx" ON "communities" USING btree ("platform","external_id");--> statement-breakpoint
 CREATE INDEX "community_org_idx" ON "communities" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX "connection_attempt_org_idx" ON "community_connection_attempts" USING btree ("organization_id","created_at");--> statement-breakpoint
+CREATE INDEX "connection_attempt_state_idx" ON "community_connection_attempts" USING btree ("state","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "action_decision_action_idx" ON "moderation_actions" USING btree ("decision_id","action");--> statement-breakpoint
 CREATE INDEX "actions_decision_idx" ON "moderation_actions" USING btree ("decision_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "feedback_decision_user_idx" ON "moderation_feedback" USING btree ("decision_id","user_id");--> statement-breakpoint

@@ -3,7 +3,7 @@ import type { LambdaFunctionURLHandler } from "aws-lambda";
 import { z } from "zod";
 import { required } from "../lib/config";
 import { secretHash, verifySecret, webhookSecret } from "../modules/telegram/crypto";
-import { extractMessage, updateSchema } from "../modules/telegram/updates";
+import { extractConnectionAttempt, extractMessage, updateSchema } from "../modules/telegram/updates";
 
 const queue = new SQSClient({});
 const botIdSchema = z.string().uuid();
@@ -27,12 +27,14 @@ export const handler: LambdaFunctionURLHandler = async (event) => {
     try { raw = JSON.parse(body); } catch { return reply(400); }
     const parsed = updateSchema.safeParse(raw);
     if (!parsed.success) return reply(400);
-    const message = extractMessage(parsed.data);
-    if (!message) return reply(200);
+    const connection = extractConnectionAttempt(parsed.data);
+    const message = connection ? null : extractMessage(parsed.data);
+    if (!connection && !message) return reply(200);
+    const connectionPayload = connection ? (({ code, ...rest }) => ({ ...rest, codeHash: secretHash(code) }))(connection) : null;
 
     await queue.send(new SendMessageCommand({
       QueueUrl: required("QUEUE_URL"),
-      MessageBody: JSON.stringify({ botId, message }),
+      MessageBody: JSON.stringify(connectionPayload ? { kind: "connection", botId, connection: connectionPayload } : { kind: "message", botId, message }),
     }));
     return reply(200);
   } catch (error) {

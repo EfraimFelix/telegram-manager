@@ -11,8 +11,8 @@ const settings = z.object({
 });
 
 export const dashboardCommand = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("connectBot"), token: z.string().trim().regex(/^\d{5,20}:[A-Za-z0-9_-]{20,150}$/) }).strict(),
-  z.object({ action: z.literal("addCommunity"), chatId: z.string().trim().regex(/^(?:-[1-9]\d{0,19}|@[A-Za-z][A-Za-z0-9_]{4,31})$/) }).strict(),
+  z.object({ action: z.literal("startConnection") }).strict(),
+  z.object({ action: z.literal("confirmConnection"), attemptId: uuid }).strict(),
   z.object({ action: z.literal("toggleModeration"), communityId: uuid, enabled: z.boolean() }).strict(),
   z.object({ action: z.literal("saveCommunitySettings"), communityId: uuid, ...settings.shape }).superRefine((value, context) => {
     if (value.warningMuteAt !== null && value.warningBanAt !== null && value.warningBanAt <= value.warningMuteAt) context.addIssue({ code: "custom", path: ["warningBanAt"], message: "Ban threshold must be greater than mute threshold." });

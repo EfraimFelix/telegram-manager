@@ -48,4 +48,17 @@ describe("Telegram webhook", () => {
     expect(response.statusCode).toBe(403);
     expect(mocks.send).not.toHaveBeenCalled();
   });
+
+  it("enqueues a group connection separately from moderation messages", async () => {
+    const botId = randomUUID();
+    const response = await invoke(event(botId, await webhookSecret(botId), {
+      update_id: 2,
+      message: { message_id: 8, date: 1_700_000_000, chat: { id: -100456, type: "supergroup" }, from: { id: 42 }, text: "/start@manager_bot abcDEF-123" },
+    }));
+
+    expect(response.statusCode).toBe(200);
+    const payload = JSON.parse(mocks.send.mock.calls[0][0].input.MessageBody);
+    expect(payload).toMatchObject({ kind: "connection", botId, connection: { telegramUserId: "42", externalId: "-100456", chatType: "supergroup", messageId: "8" } });
+    expect(payload.connection.codeHash).toMatch(/^[a-f0-9]{64}$/);
+  });
 });

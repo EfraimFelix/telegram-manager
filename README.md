@@ -6,7 +6,7 @@ An English-language SaaS for moderating Telegram groups with explicit community 
 
 - Next.js 15 App Router dashboard and Better Auth email/password sessions
 - Drizzle ORM with PostgreSQL migrations
-- Telegram bot connection, community permission checks, and webhook registration
+- Official Telegram bot connection, automatic group discovery, community permission checks, and webhook registration
 - TypeSafe Jev evaluation with one typed probability per enabled rule
 - Deterministic NOUL classification, warning progression, Telegram actions, audit log, feedback, quotas, and idempotent processing
 - Amplify Gen 2 infrastructure: Lambda Function URL, SQS with DLQ, worker Lambda, Aurora Serverless v2 Data API, Secrets Manager, alarms, and an SSR compute role
@@ -23,7 +23,15 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open `http://localhost:3000`, create an account, and sign in. The dashboard can run without Telegram or TypeSafe credentials; those credentials are needed only for their respective live integrations. Connecting a real bot locally also requires a public HTTPS URL in `WEBHOOK_BASE_URL`.
+Open `http://localhost:3000`, create an account, and sign in. The dashboard can run without Telegram or TypeSafe credentials; those credentials are needed only for their respective live integrations. Connecting the official bot locally requires `TELEGRAM_SYSTEM_BOT_TOKEN` and a public HTTPS URL in `WEBHOOK_BASE_URL`.
+
+Configure the shared bot after the database is available:
+
+```bash
+TELEGRAM_SYSTEM_BOT_TOKEN=... pnpm telegram:configure-system-bot
+```
+
+The dashboard then creates a short-lived Telegram `startgroup` link. The user selects a group, grants the bot administrator permissions, and confirms the discovered group in the dashboard. A custom bot connection remains represented internally for future use but is not exposed by the dashboard.
 
 ## Verification
 

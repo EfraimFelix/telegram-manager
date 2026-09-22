@@ -20,4 +20,8 @@ async function main() {
   }
   console.log("Database migrations applied.");
 }
-main().catch(() => { console.error("Migration failed. Check database availability, configuration and IAM permissions."); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  console.error("Migration failed. Check database availability, configuration and IAM permissions.");
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  process.exitCode = 1;
+});

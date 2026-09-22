@@ -106,6 +106,9 @@ progress::-moz-progress-bar { background: #5d7d47; border-radius: 10px; }
 .notice.success { background: #e8f1e3; color: #365b34; }
 .connection-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .connection-grid .panel > p { margin-bottom: 22px; }
+.connection-steps { display: grid; gap: 8px; margin: 0 0 22px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #f8faf5; }
+.connection-steps p { margin: 0; font-size: 12px; }
+.connection-steps strong { color: var(--green); margin-right: 6px; }
 .form-stack { display: grid; gap: 16px; }
 .form-stack > button { justify-self: start; }
 .form-stack small { margin-top: -9px; }

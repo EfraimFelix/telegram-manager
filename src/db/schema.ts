@@ -8,6 +8,8 @@ export const decisionStateEnum = pgEnum("moderation_decision_state", ["SKIPPED",
 export const ruleActionEnum = pgEnum("moderation_rule_action", ["WARN", "MUTE", "BAN"]);
 export const executionActionEnum = pgEnum("moderation_execution_action", ["WARN", "DELETE", "MUTE", "BAN"]);
 export const actionStatusEnum = pgEnum("moderation_action_status", ["PENDING", "SUCCESS", "FAILED", "SKIPPED"]);
+export const botConnectionScopeEnum = pgEnum("bot_connection_scope", ["SYSTEM", "ORGANIZATION"]);
+export const communityConnectionAttemptStateEnum = pgEnum("community_connection_attempt_state", ["PENDING", "DISCOVERED", "COMPLETED", "EXPIRED", "FAILED"]);
 
 // Better Auth uses string IDs. Domain resources use UUIDs.
 export const user = pgTable("users", {
@@ -43,9 +45,10 @@ export const organizationMembers = pgTable("organization_members", {
   userId: text("user_id").notNull().references(() => user.id), role: text("role").default("owner").notNull(),
 }, (t) => [primaryKey({ columns: [t.organizationId, t.userId] }), uniqueIndex("one_workspace_per_user").on(t.userId)]);
 export const botConnections = pgTable("bot_connections", {
-  id: id(), organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  id: id(), organizationId: uuid("organization_id").references(() => organizations.id),
   externalId: text("external_id").notNull().unique(), username: text("username").notNull(),
   encryptedToken: text("encrypted_token").notNull(), webhookSecretHash: text("webhook_secret_hash").notNull(),
+  scope: botConnectionScopeEnum("scope").default("ORGANIZATION").notNull(),
   status: text("status").default("pending").notNull(), createdAt: createdAt(),
 }, (t) => [uniqueIndex("one_bot_per_organization").on(t.organizationId)]);
 export const communities = pgTable("communities", {
@@ -59,6 +62,20 @@ export const communities = pgTable("communities", {
   warningBanAt: integer("warning_ban_at").default(4), warningBanDurationSeconds: integer("warning_ban_duration_seconds"),
   createdAt: createdAt(), updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("community_external_idx").on(t.platform, t.externalId), index("community_org_idx").on(t.organizationId)]);
+export const communityConnectionAttempts = pgTable("community_connection_attempts", {
+  id: id(), organizationId: uuid("organization_id").notNull().references(() => organizations.id),
+  botConnectionId: uuid("bot_connection_id").notNull().references(() => botConnections.id),
+  createdBy: text("created_by").notNull().references(() => user.id),
+  codeHash: text("code_hash").notNull().unique(),
+  state: communityConnectionAttemptStateEnum("state").default("PENDING").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  telegramUserId: text("telegram_user_id"),
+  candidateExternalId: text("candidate_external_id"), candidateName: text("candidate_name"), candidateUsername: text("candidate_username"),
+  candidateChatType: text("candidate_chat_type"), botIsAdmin: boolean("bot_is_admin").default(false).notNull(), userIsAdmin: boolean("user_is_admin").default(false).notNull(),
+  errorCode: text("error_code"), errorMessage: text("error_message"),
+  communityId: uuid("community_id").references(() => communities.id), consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: createdAt(), updatedAt: updatedAt(),
+}, (t) => [index("connection_attempt_org_idx").on(t.organizationId, t.createdAt), index("connection_attempt_state_idx").on(t.state, t.expiresAt)]);
 export const moderationRules = pgTable("moderation_rules", {
   id: id(), communityId: uuid("community_id").notNull().references(() => communities.id),
   name: text("name").notNull(), ruleText: text("rule_text").notNull(), action: ruleActionEnum("action").notNull(), actionDurationSeconds: integer("action_duration_seconds"), deleteMessage: boolean("delete_message").default(false).notNull(),
