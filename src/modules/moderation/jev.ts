@@ -1,6 +1,6 @@
 import { TypeSafeClient, type NoulQuestion } from "@typesafe-ai/sdk";
 import { appSecrets } from "../../lib/config";
-import { decide, type Evaluation, type Rule } from "./policy";
+import { validateEvaluations, type Evaluation, type Rule } from "./decision";
 
 export type EvaluationResult = { evaluations: Evaluation[]; model: string; inputTokens: number; latencyMs: number };
 export type ModerationEngine = (text: string, rules: Rule[]) => Promise<EvaluationResult>;
@@ -23,6 +23,6 @@ export const evaluateRules: ModerationEngine = async (text, rules) => {
   const client = new TypeSafeClient({ apiKey: typesafeApiKey, timeout: 12_000, retry: { maxRetries: 0 }, logLevel: "off" });
   const result = await client.systemOne({ state: { message: { text } }, questions: buildQuestions(rules), model: process.env.JEV_MODEL ?? "jev-1.13.0" });
   const evaluations = rules.map((rule) => ({ ruleId: rule.id, probability: result.answers[rule.id]?.noul }));
-  decide(rules, evaluations); // Reject incomplete, NaN or out-of-range responses before persisting.
+  validateEvaluations(rules, evaluations); // Reject incomplete, duplicate, NaN or out-of-range responses before persisting.
   return { evaluations, model: result.model, inputTokens: result.usage.input_tokens, latencyMs: Date.now() - start };
 };

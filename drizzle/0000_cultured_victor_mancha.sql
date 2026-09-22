@@ -1,4 +1,7 @@
-CREATE TYPE "public"."moderation_action_type" AS ENUM('ALLOW', 'REVIEW', 'DELETE');--> statement-breakpoint
+CREATE TYPE "public"."moderation_action_status" AS ENUM('PENDING', 'SUCCESS', 'FAILED', 'SKIPPED');--> statement-breakpoint
+CREATE TYPE "public"."moderation_decision_state" AS ENUM('SKIPPED', 'NO_MATCH', 'REVIEW', 'MATCHED');--> statement-breakpoint
+CREATE TYPE "public"."moderation_execution_action" AS ENUM('WARN', 'DELETE', 'MUTE', 'BAN');--> statement-breakpoint
+CREATE TYPE "public"."moderation_rule_action" AS ENUM('WARN', 'MUTE', 'BAN');--> statement-breakpoint
 CREATE TABLE "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_id" text NOT NULL,
@@ -35,8 +38,15 @@ CREATE TABLE "communities" (
 	"external_id" text NOT NULL,
 	"name" text NOT NULL,
 	"username" text,
+	"telegram_chat_type" text DEFAULT 'supergroup' NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"moderation_enabled" boolean DEFAULT false NOT NULL,
+	"warning_window_days" integer DEFAULT 30 NOT NULL,
+	"public_warnings_enabled" boolean DEFAULT false NOT NULL,
+	"warning_mute_at" integer DEFAULT 3,
+	"warning_mute_duration_seconds" integer DEFAULT 3600 NOT NULL,
+	"warning_ban_at" integer DEFAULT 4,
+	"warning_ban_duration_seconds" integer,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -44,24 +54,24 @@ CREATE TABLE "communities" (
 CREATE TABLE "moderation_actions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"decision_id" uuid NOT NULL,
-	"action" "moderation_action_type" NOT NULL,
-	"status" text DEFAULT 'pending' NOT NULL,
+	"rule_id" uuid,
+	"action" "moderation_execution_action" NOT NULL,
+	"duration_seconds" integer,
+	"status" "moderation_action_status" DEFAULT 'PENDING' NOT NULL,
 	"external_result" jsonb,
 	"executed_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "moderation_actions_decision_id_unique" UNIQUE("decision_id")
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "moderation_decisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"message_id" uuid NOT NULL,
-	"action" "moderation_action_type" NOT NULL,
+	"state" "moderation_decision_state" NOT NULL,
 	"winning_rule_id" uuid,
 	"reason" text NOT NULL,
-	"policy_version" text NOT NULL,
+	"decision_version" text NOT NULL,
 	"input_tokens" integer DEFAULT 0 NOT NULL,
 	"latency_ms" integer DEFAULT 0 NOT NULL,
-	"evaluated" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "moderation_decisions_message_id_unique" UNIQUE("message_id")
 );
@@ -70,7 +80,7 @@ CREATE TABLE "moderation_feedback" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"decision_id" uuid NOT NULL,
 	"user_id" text NOT NULL,
-	"expected_action" "moderation_action_type" NOT NULL,
+	"expected_state" "moderation_decision_state" NOT NULL,
 	"comment" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -96,7 +106,9 @@ CREATE TABLE "moderation_rule_evaluations" (
 	"rule_id" uuid NOT NULL,
 	"rule_text" text NOT NULL,
 	"rule_name" text NOT NULL,
-	"configured_action" "moderation_action_type" NOT NULL,
+	"configured_action" "moderation_rule_action" NOT NULL,
+	"action_duration_seconds" integer,
+	"delete_message" boolean NOT NULL,
 	"priority" integer NOT NULL,
 	"probability" double precision NOT NULL,
 	"matched" boolean NOT NULL,
@@ -111,13 +123,28 @@ CREATE TABLE "moderation_rules" (
 	"community_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"rule_text" text NOT NULL,
-	"action" "moderation_action_type" NOT NULL,
+	"action" "moderation_rule_action" NOT NULL,
+	"action_duration_seconds" integer,
+	"delete_message" boolean DEFAULT false NOT NULL,
 	"priority" integer DEFAULT 100 NOT NULL,
 	"enabled" boolean DEFAULT true NOT NULL,
 	"deleted_at" timestamp with time zone,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "moderation_warnings" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"decision_id" uuid NOT NULL,
+	"community_id" uuid NOT NULL,
+	"rule_id" uuid NOT NULL,
+	"platform_user_id" text NOT NULL,
+	"platform_message_id" text NOT NULL,
+	"warning_number" integer NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "moderation_warnings_decision_id_unique" UNIQUE("decision_id")
 );
 --> statement-breakpoint
 CREATE TABLE "organization_members" (
@@ -173,9 +200,14 @@ CREATE TABLE "usage_monthly" (
 	"jev_requests" integer DEFAULT 0 NOT NULL,
 	"jev_input_tokens" integer DEFAULT 0 NOT NULL,
 	"rule_evaluations" integer DEFAULT 0 NOT NULL,
+	"decisions_no_match" integer DEFAULT 0 NOT NULL,
+	"decisions_review" integer DEFAULT 0 NOT NULL,
+	"decisions_matched" integer DEFAULT 0 NOT NULL,
+	"warnings_recorded" integer DEFAULT 0 NOT NULL,
+	"actions_warn" integer DEFAULT 0 NOT NULL,
 	"actions_delete" integer DEFAULT 0 NOT NULL,
-	"actions_review" integer DEFAULT 0 NOT NULL,
-	"actions_allow" integer DEFAULT 0 NOT NULL,
+	"actions_mute" integer DEFAULT 0 NOT NULL,
+	"actions_ban" integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "usage_monthly_organization_id_year_month_pk" PRIMARY KEY("organization_id","year_month")
 );
 --> statement-breakpoint
@@ -204,6 +236,7 @@ ALTER TABLE "bot_connections" ADD CONSTRAINT "bot_connections_organization_id_or
 ALTER TABLE "communities" ADD CONSTRAINT "communities_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "communities" ADD CONSTRAINT "communities_bot_connection_id_bot_connections_id_fk" FOREIGN KEY ("bot_connection_id") REFERENCES "public"."bot_connections"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_actions" ADD CONSTRAINT "moderation_actions_decision_id_moderation_decisions_id_fk" FOREIGN KEY ("decision_id") REFERENCES "public"."moderation_decisions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "moderation_actions" ADD CONSTRAINT "moderation_actions_rule_id_moderation_rules_id_fk" FOREIGN KEY ("rule_id") REFERENCES "public"."moderation_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_decisions" ADD CONSTRAINT "moderation_decisions_message_id_moderation_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."moderation_messages"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_decisions" ADD CONSTRAINT "moderation_decisions_winning_rule_id_moderation_rules_id_fk" FOREIGN KEY ("winning_rule_id") REFERENCES "public"."moderation_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_feedback" ADD CONSTRAINT "moderation_feedback_decision_id_moderation_decisions_id_fk" FOREIGN KEY ("decision_id") REFERENCES "public"."moderation_decisions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -213,6 +246,9 @@ ALTER TABLE "moderation_rule_evaluations" ADD CONSTRAINT "moderation_rule_evalua
 ALTER TABLE "moderation_rule_evaluations" ADD CONSTRAINT "moderation_rule_evaluations_rule_id_moderation_rules_id_fk" FOREIGN KEY ("rule_id") REFERENCES "public"."moderation_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_rules" ADD CONSTRAINT "moderation_rules_community_id_communities_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."communities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "moderation_rules" ADD CONSTRAINT "moderation_rules_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "moderation_warnings" ADD CONSTRAINT "moderation_warnings_decision_id_moderation_decisions_id_fk" FOREIGN KEY ("decision_id") REFERENCES "public"."moderation_decisions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "moderation_warnings" ADD CONSTRAINT "moderation_warnings_community_id_communities_id_fk" FOREIGN KEY ("community_id") REFERENCES "public"."communities"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "moderation_warnings" ADD CONSTRAINT "moderation_warnings_rule_id_moderation_rules_id_fk" FOREIGN KEY ("rule_id") REFERENCES "public"."moderation_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_members" ADD CONSTRAINT "organization_members_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organization_members" ADD CONSTRAINT "organization_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "organizations" ADD CONSTRAINT "organizations_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -224,11 +260,15 @@ CREATE UNIQUE INDEX "accounts_provider_idx" ON "accounts" USING btree ("provider
 CREATE UNIQUE INDEX "one_bot_per_organization" ON "bot_connections" USING btree ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "community_external_idx" ON "communities" USING btree ("platform","external_id");--> statement-breakpoint
 CREATE INDEX "community_org_idx" ON "communities" USING btree ("organization_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "action_decision_action_idx" ON "moderation_actions" USING btree ("decision_id","action");--> statement-breakpoint
+CREATE INDEX "actions_decision_idx" ON "moderation_actions" USING btree ("decision_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "feedback_decision_user_idx" ON "moderation_feedback" USING btree ("decision_id","user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "message_version_idx" ON "moderation_messages" USING btree ("community_id","platform_message_id","revision");--> statement-breakpoint
 CREATE INDEX "messages_community_time_idx" ON "moderation_messages" USING btree ("community_id","received_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "evaluation_message_rule_idx" ON "moderation_rule_evaluations" USING btree ("message_id","rule_id");--> statement-breakpoint
 CREATE INDEX "rules_community_idx" ON "moderation_rules" USING btree ("community_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "warning_message_idx" ON "moderation_warnings" USING btree ("community_id","platform_message_id");--> statement-breakpoint
+CREATE INDEX "warnings_user_window_idx" ON "moderation_warnings" USING btree ("community_id","platform_user_id","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "one_workspace_per_user" ON "organization_members" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sessions_user_idx" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");

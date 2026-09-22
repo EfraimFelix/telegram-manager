@@ -31,9 +31,10 @@ input:disabled, textarea:disabled { background: #f1f3ed; }
 .danger { color: var(--red); }
 .small { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 .badge { display: inline-flex; align-items: center; gap: 5px; background: #f0f2ec; color: #627060; border-radius: 5px; padding: 5px 8px; font-size: 10px; letter-spacing: .6px; font-weight: 650; line-height: 1.5; }
-.badge.allow { color: #285c45; background: #e7f1e8; }
-.badge.review { color: #836122; background: #fbf2dc; }
-.badge.delete { color: #a24239; background: #f9eae5; }
+.badge.no_match { color: #285c45; background: #e7f1e8; }
+.badge.review, .badge.warn { color: #836122; background: #fbf2dc; }
+.badge.delete, .badge.ban { color: #a24239; background: #f9eae5; }
+.badge.matched, .badge.mute { color: #315b85; background: #e8f0f8; }
 .eyebrow { display: block; color: #6d7965; font-size: 10px; font-weight: 650; letter-spacing: 1.6px; margin: 0 0 12px; }
 .muted { color: var(--muted); font-size: 12px; }
 .workspace { display: flex; min-height: 100vh; }

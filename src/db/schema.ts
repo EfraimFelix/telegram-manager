@@ -4,7 +4,10 @@ import { boolean, check, date, doublePrecision, index, integer, jsonb, pgEnum, p
 const createdAt = () => timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date());
 const id = () => uuid("id").defaultRandom().primaryKey();
-export const actionEnum = pgEnum("moderation_action_type", ["ALLOW", "REVIEW", "DELETE"]);
+export const decisionStateEnum = pgEnum("moderation_decision_state", ["SKIPPED", "NO_MATCH", "REVIEW", "MATCHED"]);
+export const ruleActionEnum = pgEnum("moderation_rule_action", ["WARN", "MUTE", "BAN"]);
+export const executionActionEnum = pgEnum("moderation_execution_action", ["WARN", "DELETE", "MUTE", "BAN"]);
+export const actionStatusEnum = pgEnum("moderation_action_status", ["PENDING", "SUCCESS", "FAILED", "SKIPPED"]);
 
 // Better Auth uses string IDs. Domain resources use UUIDs.
 export const user = pgTable("users", {
@@ -49,12 +52,16 @@ export const communities = pgTable("communities", {
   id: id(), organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   botConnectionId: uuid("bot_connection_id").notNull().references(() => botConnections.id),
   platform: text("platform").default("telegram").notNull(), externalId: text("external_id").notNull(), name: text("name").notNull(), username: text("username"),
+  telegramChatType: text("telegram_chat_type").default("supergroup").notNull(),
   status: text("status").default("active").notNull(), moderationEnabled: boolean("moderation_enabled").default(false).notNull(),
+  warningWindowDays: integer("warning_window_days").default(30).notNull(), publicWarningsEnabled: boolean("public_warnings_enabled").default(false).notNull(),
+  warningMuteAt: integer("warning_mute_at").default(3), warningMuteDurationSeconds: integer("warning_mute_duration_seconds").default(3600).notNull(),
+  warningBanAt: integer("warning_ban_at").default(4), warningBanDurationSeconds: integer("warning_ban_duration_seconds"),
   createdAt: createdAt(), updatedAt: updatedAt(),
 }, (t) => [uniqueIndex("community_external_idx").on(t.platform, t.externalId), index("community_org_idx").on(t.organizationId)]);
 export const moderationRules = pgTable("moderation_rules", {
   id: id(), communityId: uuid("community_id").notNull().references(() => communities.id),
-  name: text("name").notNull(), ruleText: text("rule_text").notNull(), action: actionEnum("action").notNull(),
+  name: text("name").notNull(), ruleText: text("rule_text").notNull(), action: ruleActionEnum("action").notNull(), actionDurationSeconds: integer("action_duration_seconds"), deleteMessage: boolean("delete_message").default(false).notNull(),
   priority: integer("priority").default(100).notNull(), enabled: boolean("enabled").default(true).notNull(), deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdBy: text("created_by").notNull().references(() => user.id), createdAt: createdAt(), updatedAt: updatedAt(),
 }, (t) => [index("rules_community_idx").on(t.communityId)]);
@@ -68,31 +75,37 @@ export const moderationMessages = pgTable("moderation_messages", {
 }, (t) => [uniqueIndex("message_version_idx").on(t.communityId, t.platformMessageId, t.revision), index("messages_community_time_idx").on(t.communityId, t.receivedAt)]);
 export const moderationRuleEvaluations = pgTable("moderation_rule_evaluations", {
   id: id(), messageId: uuid("message_id").notNull().references(() => moderationMessages.id), ruleId: uuid("rule_id").notNull().references(() => moderationRules.id),
-  ruleText: text("rule_text").notNull(), ruleName: text("rule_name").notNull(), configuredAction: actionEnum("configured_action").notNull(), priority: integer("priority").notNull(),
+  ruleText: text("rule_text").notNull(), ruleName: text("rule_name").notNull(), configuredAction: ruleActionEnum("configured_action").notNull(), actionDurationSeconds: integer("action_duration_seconds"), deleteMessage: boolean("delete_message").notNull(), priority: integer("priority").notNull(),
   probability: doublePrecision("probability").notNull(), matched: boolean("matched").notNull(),
   provider: text("provider").default("jev").notNull(), providerModel: text("provider_model").notNull(), createdAt: createdAt(),
 }, (t) => [uniqueIndex("evaluation_message_rule_idx").on(t.messageId, t.ruleId), check("valid_probability", sql`${t.probability} >= 0 AND ${t.probability} <= 1`)]);
 export const moderationDecisions = pgTable("moderation_decisions", {
   id: id(), messageId: uuid("message_id").notNull().unique().references(() => moderationMessages.id),
-  action: actionEnum("action").notNull(), winningRuleId: uuid("winning_rule_id").references(() => moderationRules.id),
-  reason: text("reason").notNull(), policyVersion: text("policy_version").notNull(), inputTokens: integer("input_tokens").default(0).notNull(),
-  latencyMs: integer("latency_ms").default(0).notNull(), evaluated: boolean("evaluated").default(false).notNull(), createdAt: createdAt(),
+  state: decisionStateEnum("state").notNull(), winningRuleId: uuid("winning_rule_id").references(() => moderationRules.id),
+  reason: text("reason").notNull(), decisionVersion: text("decision_version").notNull(), inputTokens: integer("input_tokens").default(0).notNull(),
+  latencyMs: integer("latency_ms").default(0).notNull(), createdAt: createdAt(),
 });
 export const moderationActions = pgTable("moderation_actions", {
-  id: id(), decisionId: uuid("decision_id").notNull().unique().references(() => moderationDecisions.id),
-  action: actionEnum("action").notNull(), status: text("status").default("pending").notNull(), externalResult: jsonb("external_result").$type<{ code?: number; description?: string }>(),
-  executedAt: timestamp("executed_at", { withTimezone: true }), createdAt: createdAt(),
-});
+  id: id(), decisionId: uuid("decision_id").notNull().references(() => moderationDecisions.id), ruleId: uuid("rule_id").references(() => moderationRules.id),
+  action: executionActionEnum("action").notNull(), durationSeconds: integer("duration_seconds"), status: actionStatusEnum("status").default("PENDING").notNull(),
+  externalResult: jsonb("external_result").$type<{ code?: number; description?: string; reason?: string }>(), executedAt: timestamp("executed_at", { withTimezone: true }), createdAt: createdAt(),
+}, (t) => [uniqueIndex("action_decision_action_idx").on(t.decisionId, t.action), index("actions_decision_idx").on(t.decisionId)]);
+export const moderationWarnings = pgTable("moderation_warnings", {
+  id: id(), decisionId: uuid("decision_id").notNull().unique().references(() => moderationDecisions.id), communityId: uuid("community_id").notNull().references(() => communities.id),
+  ruleId: uuid("rule_id").notNull().references(() => moderationRules.id), platformUserId: text("platform_user_id").notNull(), platformMessageId: text("platform_message_id").notNull(),
+  warningNumber: integer("warning_number").notNull(), createdAt: createdAt(), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (t) => [uniqueIndex("warning_message_idx").on(t.communityId, t.platformMessageId), index("warnings_user_window_idx").on(t.communityId, t.platformUserId, t.expiresAt)]);
 export const moderationFeedback = pgTable("moderation_feedback", {
   id: id(), decisionId: uuid("decision_id").notNull().references(() => moderationDecisions.id), userId: text("user_id").notNull().references(() => user.id),
-  expectedAction: actionEnum("expected_action").notNull(), comment: text("comment"), createdAt: createdAt(),
+  expectedState: decisionStateEnum("expected_state").notNull(), comment: text("comment"), createdAt: createdAt(),
 }, (t) => [uniqueIndex("feedback_decision_user_idx").on(t.decisionId, t.userId)]);
 export const usageMonthly = pgTable("usage_monthly", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id), yearMonth: date("year_month").notNull(),
   messagesReceived: integer("messages_received").default(0).notNull(), messagesModerated: integer("messages_moderated").default(0).notNull(),
   jevRequests: integer("jev_requests").default(0).notNull(), jevInputTokens: integer("jev_input_tokens").default(0).notNull(),
-  ruleEvaluations: integer("rule_evaluations").default(0).notNull(), actionsDelete: integer("actions_delete").default(0).notNull(),
-  actionsReview: integer("actions_review").default(0).notNull(), actionsAllow: integer("actions_allow").default(0).notNull(),
+  ruleEvaluations: integer("rule_evaluations").default(0).notNull(), decisionsNoMatch: integer("decisions_no_match").default(0).notNull(),
+  decisionsReview: integer("decisions_review").default(0).notNull(), decisionsMatched: integer("decisions_matched").default(0).notNull(), warningsRecorded: integer("warnings_recorded").default(0).notNull(),
+  actionsWarn: integer("actions_warn").default(0).notNull(), actionsDelete: integer("actions_delete").default(0).notNull(), actionsMute: integer("actions_mute").default(0).notNull(), actionsBan: integer("actions_ban").default(0).notNull(),
 }, (t) => [primaryKey({ columns: [t.organizationId, t.yearMonth] })]);
 export const ruleTestUsage = pgTable("rule_test_usage", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id), day: date("day").notNull(), count: integer("count").default(0).notNull(),

@@ -1,9 +1,10 @@
 import type { DashboardData as DashboardPayload } from "../modules/dashboard/contracts";
 
-export type Action = "ALLOW" | "REVIEW" | "DELETE";
-export type Rule = { id: string; communityId: string; name: string; ruleText: string; action: "DELETE" | "REVIEW"; priority: number; enabled: boolean };
+export type Action = "WARN" | "DELETE" | "MUTE" | "BAN";
+export type DecisionState = "SKIPPED" | "NO_MATCH" | "REVIEW" | "MATCHED";
+export type Rule = { id: string; communityId: string; name: string; ruleText: string; action: "WARN" | "MUTE" | "BAN"; actionDurationSeconds: number | null; deleteMessage: boolean; priority: number; enabled: boolean };
 export type Evaluation = { ruleId: string; ruleName?: string; probability: number };
-export type TestResult = { action: Action; reason: string; evaluations?: Evaluation[]; matchedRules?: Evaluation[] };
+export type TestResult = { state: Exclude<DecisionState, "SKIPPED">; reason: string; evaluations?: Evaluation[]; matchedRules?: Evaluation[]; reviewRules?: Evaluation[] };
 export type TestResponse = { evaluations: Evaluation[]; decision: TestResult };
 export type DashboardData = DashboardPayload;
 

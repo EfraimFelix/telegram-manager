@@ -8,7 +8,7 @@ An English-language SaaS for moderating Telegram groups with explicit community 
 - Drizzle ORM with PostgreSQL migrations
 - Telegram bot connection, community permission checks, and webhook registration
 - TypeSafe Jev evaluation with one typed probability per enabled rule
-- Deterministic allow/review/delete policy, audit log, feedback, quotas, and idempotent processing
+- Deterministic NOUL classification, warning progression, Telegram actions, audit log, feedback, quotas, and idempotent processing
 - Amplify Gen 2 infrastructure: Lambda Function URL, SQS with DLQ, worker Lambda, Aurora Serverless v2 Data API, Secrets Manager, alarms, and an SSR compute role
 
 ## Local development
