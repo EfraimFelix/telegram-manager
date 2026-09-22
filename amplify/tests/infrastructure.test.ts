@@ -15,29 +15,13 @@ const stack = new Stack(app, 'Test', { env: { account: '111111111111', region: '
 const fixture = fileURLToPath(new URL('./fixtures/handler.ts', import.meta.url));
 const infrastructure = new ModerationInfrastructure(stack, 'Moderation', {
   webhookEntry: fixture, workerEntry: fixture,
+  databaseUrl: 'postgresql://user:password@database.example.com:5432/telegram_manager',
 });
 const template = Template.fromStack(stack);
 
-test('Aurora uses one private writer, Data API, and bounded scale-to-zero', () => {
-  template.resourceCountIs('AWS::RDS::DBInstance', 1);
-  template.hasResourceProperties('AWS::RDS::DBCluster', {
-    Engine: 'aurora-postgresql',
-    EnableHttpEndpoint: true,
-    DatabaseName: 'telegram_manager',
-    StorageEncrypted: true,
-    DeletionProtection: true,
-    ServerlessV2ScalingConfiguration: { MinCapacity: 0, MaxCapacity: 2, SecondsUntilAutoPause: 300 },
-  });
-  template.hasResourceProperties('AWS::RDS::DBInstance', {
-    DBInstanceClass: 'db.serverless', PubliclyAccessible: false,
-  });
-  template.hasResource('AWS::RDS::DBCluster', { DeletionPolicy: 'Retain', UpdateReplacePolicy: 'Retain' });
-  template.resourceCountIs('AWS::EC2::Subnet', 2);
-  for (const type of ['AWS::EC2::NatGateway', 'AWS::EC2::InternetGateway', 'AWS::EC2::VPCEndpoint', 'AWS::EC2::SecurityGroupIngress']) {
+test('uses the configured PostgreSQL URL and does not provision Aurora or networking', () => {
+  for (const type of ['AWS::RDS::DBInstance', 'AWS::RDS::DBCluster', 'AWS::RDS::DBSubnetGroup', 'AWS::EC2::VPC', 'AWS::EC2::Subnet', 'AWS::EC2::NatGateway', 'AWS::EC2::InternetGateway', 'AWS::EC2::VPCEndpoint', 'AWS::EC2::SecurityGroup']) {
     template.resourceCountIs(type, 0);
-  }
-  for (const group of Object.values(template.findResources('AWS::EC2::SecurityGroup'))) {
-    assert.equal(group.Properties.SecurityGroupIngress, undefined);
   }
 });
 
@@ -58,9 +42,9 @@ test('only two application Lambdas, with public URL restricted to URL invocation
   }
   const functions = Object.values(template.findResources('AWS::Lambda::Function'));
   const webhook = functions.find(fn => fn.Properties.Environment.Variables.QUEUE_URL)!;
-  const worker = functions.find(fn => fn.Properties.Environment.Variables.DB_RESOURCE_ARN)!;
+  const worker = functions.find(fn => fn.Properties.Environment.Variables.DATABASE_URL)!;
   assert.deepEqual(Object.keys(webhook.Properties.Environment.Variables).sort(), ['APP_SECRET_ARN', 'QUEUE_URL']);
-  assert.deepEqual(Object.keys(worker.Properties.Environment.Variables).sort(), ['APP_SECRET_ARN', 'DB_NAME', 'DB_RESOURCE_ARN', 'DB_SECRET_ARN']);
+  assert.deepEqual(Object.keys(worker.Properties.Environment.Variables).sort(), ['APP_SECRET_ARN', 'DATABASE_URL']);
 });
 
 test('standard SQS retries are bounded, isolated per message, and end in a retained DLQ', () => {
@@ -78,7 +62,7 @@ test('standard SQS retries are bounded, isolated per message, and end in a retai
   });
 });
 
-test('SSR compute role can use Data API and both secrets without wildcard resources', () => {
+test('SSR compute role reads the application secret without database permissions', () => {
   const roles = template.findResources('AWS::IAM::Role');
   const roleIds = Object.entries(roles)
     .filter(([, role]) => role.Properties.Description === 'Attach to the Amplify Hosting branch SSR compute role setting.')
@@ -95,9 +79,10 @@ test('SSR compute role can use Data API and both secrets without wildcard resour
     .filter(policy => policy.Properties.Roles.some((role: { Ref?: string }) => role.Ref === roleId));
   const statements = policies.flatMap(policy => policy.Properties.PolicyDocument.Statement) as Array<{ Action: string | string[]; Resource: unknown }>;
   const actions = statements.flatMap(statement => Array.isArray(statement.Action) ? statement.Action : [statement.Action]);
-  for (const action of ['rds-data:ExecuteStatement', 'rds-data:BeginTransaction', 'rds-data:CommitTransaction', 'rds-data:RollbackTransaction', 'secretsmanager:GetSecretValue']) {
+  for (const action of ['secretsmanager:GetSecretValue']) {
     assert.ok(actions.includes(action), `Missing ${action}`);
   }
+  assert.equal(actions.some(action => action.startsWith('rds-data:')), false);
   assert.equal(actions.includes('sqs:SendMessage'), false);
   const secretReads = statements.filter(statement => (Array.isArray(statement.Action) ? statement.Action : [statement.Action]).includes('secretsmanager:GetSecretValue'));
   assert.ok(secretReads.length >= 1);
@@ -105,7 +90,7 @@ test('SSR compute role can use Data API and both secrets without wildcard resour
 });
 
 test('secrets remain generated and retained, and outputs contain identifiers only', () => {
-  template.resourceCountIs('AWS::SecretsManager::Secret', 2);
+  template.resourceCountIs('AWS::SecretsManager::Secret', 1);
   template.hasResourceProperties('AWS::SecretsManager::Secret', {
     GenerateSecretString: {
       SecretStringTemplate: '{"typesafeApiKey":""}', GenerateStringKey: 'key',
@@ -116,7 +101,7 @@ test('secrets remain generated and retained, and outputs contain identifiers onl
     assert.equal(secret.DeletionPolicy, 'Retain');
   }
   assert.deepEqual(Object.keys(infrastructure.runtime).sort(), [
-    'appSecretArn', 'computeRoleArn', 'dbName', 'dbResourceArn', 'dbSecretArn', 'queueUrl', 'region', 'webhookBaseUrl',
+    'appSecretArn', 'computeRoleArn', 'queueUrl', 'webhookBaseUrl',
   ]);
 });
 

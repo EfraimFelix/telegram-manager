@@ -11,9 +11,6 @@ importers:
 
   .:
     dependencies:
-      '@aws-sdk/client-rds-data':
-        specifier: ^3.1136.0
-        version: 3.1136.0
       '@aws-sdk/client-secrets-manager':
         specifier: ^3.1136.0
         version: 3.1136.0
@@ -6712,6 +6709,7 @@ snapshots:
       '@smithy/node-http-handler': 4.12.1
       '@smithy/types': 4.18.0
       tslib: 2.8.1
+    optional: true
 
   '@aws-sdk/client-rds@3.1136.0':
     dependencies:

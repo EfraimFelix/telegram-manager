@@ -4,10 +4,6 @@ import { pathToFileURL } from 'node:url';
 
 // Never serialize process.env or the whole outputs object into a deployment artifact.
 const fields = {
-  AWS_REGION: 'region',
-  DB_RESOURCE_ARN: 'dbResourceArn',
-  DB_SECRET_ARN: 'dbSecretArn',
-  DB_NAME: 'dbName',
   APP_SECRET_ARN: 'appSecretArn',
   WEBHOOK_BASE_URL: 'webhookBaseUrl',
 };
@@ -21,17 +17,7 @@ export function renderRuntimeConfig(outputs, betterAuthUrl) {
       throw new Error(`Missing or invalid ${name}; only non-secret identifiers and URLs are allowed.`);
     }
   }
-  if (!/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(values.AWS_REGION)) throw new Error('Invalid AWS_REGION');
-  for (const [name, service, resource] of [
-    ['DB_RESOURCE_ARN', 'rds', 'cluster:'],
-    ['DB_SECRET_ARN', 'secretsmanager', 'secret:'],
-    ['APP_SECRET_ARN', 'secretsmanager', 'secret:'],
-  ]) {
-    if (!new RegExp(`^arn:aws(?:-[a-z]+)?:${service}:${values.AWS_REGION}:\\d{12}:${resource}.+$`).test(values[name])) {
-      throw new Error(`Invalid ${name}`);
-    }
-  }
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(values.DB_NAME)) throw new Error('Invalid DB_NAME');
+  if (!/^arn:aws(?:-[a-z]+)?:secretsmanager:[a-z]{2}(?:-[a-z]+)+-\d+:\d{12}:secret:.+$/.test(values.APP_SECRET_ARN)) throw new Error('Invalid APP_SECRET_ARN');
   for (const name of ['WEBHOOK_BASE_URL', 'BETTER_AUTH_URL']) {
     const url = new URL(values[name]);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {

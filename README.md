@@ -9,7 +9,7 @@ An English-language SaaS for moderating Telegram groups with explicit community 
 - Official Telegram bot connection, automatic group discovery, community permission checks, and webhook registration
 - TypeSafe Jev evaluation with one typed probability per enabled rule
 - Deterministic NOUL classification, warning progression, Telegram actions, audit log, feedback, quotas, and idempotent processing
-- Amplify Gen 2 infrastructure: Lambda Function URL, SQS with DLQ, worker Lambda, Aurora Serverless v2 Data API, Secrets Manager, alarms, and an SSR compute role
+- Amplify Gen 2 infrastructure: Lambda Function URL, SQS with DLQ, worker Lambda, Secrets Manager, alarms, and an SSR compute role; PostgreSQL is supplied through `DATABASE_URL`
 
 ## Local development
 

@@ -10,6 +10,12 @@ backend:
         - pnpm exec tsx --test amplify/tests/*.test.ts
         - pnpm exec ampx pipeline-deploy --branch "$AWS_BRANCH" --app-id "$AWS_APP_ID"
         - node scripts/write-runtime-config.mjs
+        - 'echo "DATABASE_URL=$DATABASE_URL" > .env.production'
+        - 'echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET" >> .env.production'
+        - 'echo "BETTER_AUTH_URL=$BETTER_AUTH_URL" >> .env.production'
+        - 'echo "TYPESAFE_API_KEY=$TYPESAFE_API_KEY" >> .env.production'
+        - 'echo "JEV_MODEL=$JEV_MODEL" >> .env.production'
+        - 'echo "TELEGRAM_SYSTEM_BOT_TOKEN=$TELEGRAM_SYSTEM_BOT_TOKEN" >> .env.production'
 frontend:
   phases:
     build:

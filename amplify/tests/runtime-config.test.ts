@@ -9,10 +9,6 @@ import { renderRuntimeConfig } from '../../scripts/write-runtime-config.mjs';
 
 const outputs = {
   custom: { runtime: {
-    region: 'us-east-1',
-    dbResourceArn: 'arn:aws:rds:us-east-1:111111111111:cluster:test',
-    dbSecretArn: 'arn:aws:secretsmanager:us-east-1:111111111111:secret:database-test',
-    dbName: 'telegram_manager',
     appSecretArn: 'arn:aws:secretsmanager:us-east-1:111111111111:secret:app-test',
     queueUrl: 'https://sqs.us-east-1.amazonaws.com/111111111111/test',
     webhookBaseUrl: 'https://test.lambda-url.us-east-1.on.aws/',
@@ -23,7 +19,7 @@ const outputs = {
 
 test('runtime config uses an explicit allowlist and includes the SSR webhook origin', () => {
   const config = renderRuntimeConfig(outputs, 'https://app.example.com');
-  assert.equal(config.split('\n').filter(line => /^[A-Z_]+=/.test(line)).length, 7);
+  assert.equal(config.split('\n').filter(line => /^[A-Z_]+=/.test(line)).length, 3);
   assert.ok(!config.includes('QUEUE_URL='));
   assert.ok(config.includes('WEBHOOK_BASE_URL=https://test.lambda-url.us-east-1.on.aws/'));
   assert.ok(config.includes('BETTER_AUTH_URL=https://app.example.com'));
@@ -32,12 +28,12 @@ test('runtime config uses an explicit allowlist and includes the SSR webhook ori
   assert.ok(!config.includes('NEXT_PUBLIC_'));
 });
 
-test('missing fields, mismatched regions and dotenv injection fail before writing', () => {
+test('missing fields and dotenv injection fail before writing', () => {
   assert.throws(() => renderRuntimeConfig({}, 'https://app.example.com'), /Missing/);
   for (const value of ['', 'name\nPASSWORD=oops', '$PASSWORD', 'name"', 'name\\']) {
-    assert.throws(() => renderRuntimeConfig({ custom: { runtime: { ...outputs.custom.runtime, dbName: value } } }, 'https://app.example.com'));
+    assert.throws(() => renderRuntimeConfig({ custom: { runtime: { ...outputs.custom.runtime, appSecretArn: value } } }, 'https://app.example.com'));
   }
-  assert.throws(() => renderRuntimeConfig({ custom: { runtime: { ...outputs.custom.runtime, region: 'us-west-2' } } }, 'https://app.example.com'), /DB_RESOURCE_ARN/);
+  assert.throws(() => renderRuntimeConfig({ custom: { runtime: { ...outputs.custom.runtime, appSecretArn: 'arn:aws:rds:us-east-1:111111111111:cluster:test' } } }, 'https://app.example.com'), /APP_SECRET_ARN/);
   for (const url of [undefined, 'http://app.example.com', 'https://user:password@app.example.com', 'https://app.example.com/path']) {
     assert.throws(() => renderRuntimeConfig(outputs, url));
   }

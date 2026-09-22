@@ -1,14 +1,12 @@
 import { fileURLToPath } from 'node:url';
-import { CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { SnsAction } from 'aws-cdk-lib/aws-cloudwatch-actions';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -17,6 +15,7 @@ import { Construct } from 'constructs';
 export interface InfrastructureProps {
   webhookEntry?: string;
   workerEntry?: string;
+  databaseUrl?: string;
 }
 
 export class ModerationInfrastructure extends Construct {
@@ -25,43 +24,12 @@ export class ModerationInfrastructure extends Construct {
   constructor(scope: Construct, id: string, props: InfrastructureProps = {}) {
     super(scope, id);
 
-    const vpc = new ec2.Vpc(this, 'DatabaseVpc', {
-      maxAzs: 2,
-      natGateways: 0,
-      createInternetGateway: false,
-      // Avoid the CDK custom-resource Lambda; the database uses its own SG.
-      restrictDefaultSecurityGroup: false,
-      subnetConfiguration: [{ name: 'Database', subnetType: ec2.SubnetType.PRIVATE_ISOLATED }],
-    });
-    const databaseSecurityGroup = new ec2.SecurityGroup(this, 'DatabaseSecurityGroup', {
-      vpc,
-      allowAllOutbound: false,
-      description: 'No direct database connections; application access uses the RDS Data API.',
-    });
-    const databaseSecret = new rds.DatabaseSecret(this, 'DatabaseSecret', {
-      username: 'clusteradmin',
-    });
-    databaseSecret.applyRemovalPolicy(RemovalPolicy.RETAIN);
-    const database = new rds.DatabaseCluster(this, 'Database', {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({
-        version: rds.AuroraPostgresEngineVersion.VER_16_13,
-      }),
-      writer: rds.ClusterInstance.serverlessV2('Writer', { publiclyAccessible: false }),
-      serverlessV2MinCapacity: 0,
-      serverlessV2MaxCapacity: 2,
-      serverlessV2AutoPauseDuration: Duration.minutes(5),
-      enableDataApi: true,
-      credentials: rds.Credentials.fromSecret(databaseSecret),
-      defaultDatabaseName: 'telegram_manager',
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [databaseSecurityGroup],
-      storageEncrypted: true,
-      storageType: rds.DBClusterStorageType.AURORA,
-      backup: { retention: Duration.days(7) },
-      deletionProtection: true,
-      removalPolicy: RemovalPolicy.RETAIN,
-    });
+    const databaseUrl = props.databaseUrl ?? process.env.DATABASE_URL;
+    if (!databaseUrl) throw new Error('DATABASE_URL is required to configure the worker.');
+    const databaseProtocol = new URL(databaseUrl).protocol;
+    if (databaseProtocol !== 'postgres:' && databaseProtocol !== 'postgresql:') {
+      throw new Error('DATABASE_URL must use the PostgreSQL protocol.');
+    }
     const appSecret = new secretsmanager.Secret(this, 'ApplicationSecret', {
       description: 'Stable auth/encryption key and manually configured TypeSafe API key.',
       generateSecretString: {
@@ -123,14 +91,11 @@ export class ModerationInfrastructure extends Construct {
       2,
       {
         APP_SECRET_ARN: appSecret.secretArn,
-        DB_RESOURCE_ARN: database.clusterArn,
-        DB_SECRET_ARN: databaseSecret.secretArn,
-        DB_NAME: 'telegram_manager',
+        DATABASE_URL: databaseUrl,
       },
     );
     appSecret.grantRead(webhook);
     appSecret.grantRead(worker);
-    database.grantDataApiAccess(worker);
     queue.grantSendMessages(webhook);
     worker.addEventSource(new SqsEventSource(queue, {
       batchSize: 1,
@@ -144,7 +109,6 @@ export class ModerationInfrastructure extends Construct {
       assumedBy: new iam.ServicePrincipal('amplify.amazonaws.com'),
       description: 'Attach to the Amplify Hosting branch SSR compute role setting.',
     });
-    database.grantDataApiAccess(computeRole);
     appSecret.grantRead(computeRole);
 
     const alarmsTopic = new sns.Topic(this, 'AlarmsTopic');
@@ -167,10 +131,6 @@ export class ModerationInfrastructure extends Construct {
     new CfnOutput(this, 'AlarmsTopicArn', { value: alarmsTopic.topicArn });
 
     this.runtime = {
-      region: Stack.of(this).region,
-      dbResourceArn: database.clusterArn,
-      dbSecretArn: databaseSecret.secretArn,
-      dbName: 'telegram_manager',
       appSecretArn: appSecret.secretArn,
       queueUrl: queue.queueUrl,
       webhookBaseUrl: webhookUrl.url,
