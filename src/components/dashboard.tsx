@@ -35,6 +35,7 @@ export default function Dashboard() {
     if (!next?.user || !Array.isArray(next.communities) || !Array.isArray(next.rules) || !Array.isArray(next.recentLogs) || !next.limits || !next.usage || !Array.isArray(next.dailyStats)) {
       throw new Error("The dashboard response is incomplete. The service may still be being configured.");
     }
+    setError("");
     setData(next);
   }, []);
   useEffect(() => {
