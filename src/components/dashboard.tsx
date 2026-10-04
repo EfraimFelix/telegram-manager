@@ -71,7 +71,6 @@ export default function Dashboard() {
       throw new Error("Não foi possível carregar todos os dados do painel.");
     }
     setData(next);
-    setError("");
   }, []);
 
   useEffect(() => {
@@ -88,7 +87,7 @@ export default function Dashboard() {
     const timer = window.setInterval(() => {
       if (busy.current || polling.current || document.visibilityState !== "visible") return;
       polling.current = true;
-      void load(controller.signal).catch(cause => { if (!controller.signal.aborted) setError(errorMessage(cause)); })
+      void load(controller.signal).catch(cause => { if (!controller.signal.aborted) setError(current => current || errorMessage(cause)); })
         .finally(() => { polling.current = false; });
     }, 2_000);
     return () => { window.clearInterval(timer); controller.abort(); };
@@ -131,6 +130,7 @@ export default function Dashboard() {
   function navigate(target: Section, filter: DecisionState | "ALL" = "ALL") {
     setSection(target);
     setLogFilter(filter);
+    setError("");
     setNotice("");
     window.scrollTo(0, 0);
   }
@@ -179,16 +179,16 @@ export default function Dashboard() {
       </div>
     </aside>
     <div className="app-main">
-      <header className="topbar"><div className="topbar-path">Workspace <span>/</span> <strong>{pageName}</strong></div><div className="topbar-actions"><span className={"connection-indicator" + (data?.bot?.status === "active" ? " is-connected" : "")}><span className="status-dot" />{data?.bot?.status === "active" ? "Bot conectado" : "Bot indisponível"}</span><button className="icon-button" type="button" aria-label="Atualizar dados" title="Atualizar dados" disabled={disabled} onClick={refresh}><Icon name="refresh" size={17} /></button></div></header>
+      <header className="topbar"><div className="topbar-path">Workspace <span>/</span> <strong>{pageName}</strong></div><div className="topbar-actions"><span className={"connection-indicator" + (data?.bot?.status === "active" ? " is-connected" : "")}><span className="status-dot" />{data?.bot?.status === "active" ? "Bot disponível" : "Bot indisponível"}</span><button className="icon-button" type="button" aria-label="Atualizar dados" title="Atualizar dados" disabled={disabled} onClick={refresh}><Icon name="refresh" size={17} /></button></div></header>
       <main id="main-content" className="page-content">
-        {error && <div className="notice error" role="alert"><strong>{data ? "Não foi possível concluir a ação" : "Não foi possível abrir seu workspace"}</strong><p>{error}</p>{!data && <button className="secondary" type="button" disabled={disabled} onClick={refresh}>Tentar novamente</button>}</div>}
+        {error && (!data || section !== "connection") && <div className="notice error" role="alert"><strong>{data ? "Não foi possível concluir a ação" : "Não foi possível abrir seu workspace"}</strong><p>{error}</p>{!data && <button className="secondary" type="button" disabled={disabled} onClick={refresh}>Tentar novamente</button>}</div>}
         {notice && <div className="notice success" role="status">{notice}</div>}
         {!data && !error && <div className="panel loading-state" role="status" aria-busy="true"><span className="loading-line" /><h1>Preparando seu workspace</h1><p>Carregando comunidades, regras e atividade recente…</p></div>}
         {data && <>
           {data.communities.length > 1 && <label className="community-picker">Comunidade<select value={community?.id ?? ""} onChange={event => changeCommunity(event.target.value)} disabled={disabled}>{data.communities.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
 
           {section === "overview" && <>
-            <div className="page-heading"><div><span className="eyebrow">RESUMO DA COMUNIDADE</span><h1>Olá, {data.user.name.split(" ")[0]}</h1><p>Veja o que aconteceu no grupo e onde sua atenção faz diferença.</p></div><span className={"status-pill " + (community?.moderationEnabled ? "status-active" : "status-inactive")}><span className="status-dot" />{community?.moderationEnabled ? "Proteção ativa" : "Proteção pausada"}</span></div>
+            <div className="page-heading"><div><span className="eyebrow">RESUMO DA COMUNIDADE</span><h1>Olá, {data.user.name.split(" ")[0]}</h1><p>Veja o que aconteceu no grupo e onde sua atenção faz diferença.</p></div><span className={"status-pill " + (community?.moderationEnabled ? "status-active" : "status-inactive")}><span className="status-dot" />{community ? (community.moderationEnabled ? "Proteção ativa" : "Proteção pausada") : "Sem grupo conectado"}</span></div>
             {community ? <section className={"attention-card " + (data.usage.decisionsReview ? "attention-review" : "attention-clear")}><span className="attention-icon"><Icon name={data.usage.decisionsReview ? "alert" : "shield"} size={21} /></span><div><strong>{data.usage.decisionsReview ? number(data.usage.decisionsReview) + (data.usage.decisionsReview === 1 ? " decisão marcada para revisão" : " decisões marcadas para revisão") : "Nenhuma revisão sinalizada neste mês"}</strong><p>{data.usage.decisionsReview ? "Confira o contexto antes de ajustar uma regra ou dar retorno sobre a decisão." : "Sua equipe pode conferir todas as decisões no registro de moderação."}</p></div><button className="secondary" type="button" onClick={() => navigate("log", data.usage.decisionsReview ? "REVIEW" : "ALL")}>{data.usage.decisionsReview ? "Ver revisões" : "Ver registro"} <Icon name="arrow" size={15} /></button></section>
               : <section className="attention-card"><span className="attention-icon"><Icon name="bot" size={21} /></span><div><strong>Conecte sua primeira comunidade</strong><p>Adicione o bot ao grupo e veja a proteção começar a funcionar.</p></div><button className="primary" type="button" onClick={() => navigate("connection")}>Conectar grupo <Icon name="arrow" size={15} /></button></section>}
             <div className="stats-grid">
@@ -245,9 +245,11 @@ export default function Dashboard() {
             <button className="text-button page-back" type="button" onClick={() => navigate("communities")}>← Comunidades</button>
             <div className="page-heading"><div><span className="eyebrow">INTEGRAÇÃO</span><h1>Telegram bot</h1><p>Confira a conexão e as permissões necessárias para moderar.</p></div><span className={"status-pill " + (data.bot?.status === "active" ? "status-active" : "status-inactive")}><span className="status-dot" />{data.bot?.status === "active" ? "Bot disponível" : "Bot indisponível"}</span></div>
             <div className="connection-grid"><section className="panel connection-main"><div className="section-heading"><div><h2>{community ? "Conexão com " + community.name : "Conecte seu grupo"}</h2><p>O bot oficial modera o grupo com as regras que você configurar.</p></div><Icon name="bot" size={20} /></div>
+                {error && <div className="notice error connection-error" role="alert"><strong>Não foi possível concluir a conexão</strong><p>{error}</p><small>O bot continua no Telegram. Tente novamente; se persistir, informe o horário da tentativa ao suporte.</small></div>}
                 {community ? <div className="connected-community"><span className="community-avatar">{community.name[0]?.toUpperCase()}</span><div><strong>{community.name}</strong><small>Grupo conectado ao Telegram Manager</small></div><span className={"status-pill " + (community.moderationEnabled ? "status-active" : "status-inactive")}><span className="status-dot" />{community.moderationEnabled ? "Proteção ativa" : "Proteção pausada"}</span></div>
-                  : data.connectionAttempt?.state === "DISCOVERED" && data.connectionAttempt.candidate ? <div className="connected-community"><span className="community-avatar">{data.connectionAttempt.candidate.name?.[0]?.toUpperCase() ?? "#"}</span><div><strong>{data.connectionAttempt.candidate.name ?? "Grupo Telegram"}</strong><small>{data.connectionAttempt.candidate.botIsAdmin && data.connectionAttempt.candidate.userIsAdmin ? "Pronto para proteger este grupo." : data.connectionAttempt.errorMessage ?? "Conclua as permissões de administrador no Telegram."}</small></div><button className="primary" type="button" disabled={disabled} onClick={() => void mutate("confirmConnection", { attemptId: data.connectionAttempt!.id }, "Grupo conectado e protegido.")}>{pending === "confirmConnection" ? "Verificando…" : "Proteger grupo"}</button></div>
+                  : data.connectionAttempt?.state === "DISCOVERED" && data.connectionAttempt.candidate ? <div className="connected-community"><span className="community-avatar">{data.connectionAttempt.candidate.name?.[0]?.toUpperCase() ?? "#"}</span><div><strong>{data.connectionAttempt.candidate.name ?? "Grupo Telegram"}</strong><small>{data.connectionAttempt.candidate.botIsAdmin && data.connectionAttempt.candidate.userIsAdmin ? "Grupo encontrado. Confirme para ativar a proteção." : data.connectionAttempt.errorMessage ?? "Conclua as permissões de administrador no Telegram."}</small></div><button className="primary" type="button" disabled={disabled} onClick={async () => { if (await mutate("confirmConnection", { attemptId: data.connectionAttempt!.id }, "Grupo conectado e protegido.")) { navigate("rules"); setNotice("Grupo conectado. Teste a regra inicial para ver como o bot responde."); } }}>{pending === "confirmConnection" ? "Verificando…" : "Proteger grupo"}</button></div>
                   : data.connectionAttempt?.state === "PENDING" && connectionUrl ? <div className="connection-action"><a className="primary" href={connectionUrl}>Abrir Telegram para escolher o grupo <Icon name="external" size={16} /></a><small>Este link expira em 15 minutos.</small></div>
+                  : data.connectionAttempt?.state === "PENDING" ? <div className="connection-action"><p>O convite anterior ainda está aguardando a escolha do grupo no Telegram. Se perdeu o link, gere outro.</p><button className="secondary" type="button" disabled={disabled} onClick={() => void mutate("startConnection", {}, "Novo convite pronto para abrir no Telegram.")}>{pending === "startConnection" ? "Preparando link…" : "Gerar novo convite"}</button></div>
                   : <div className="connection-action">{data.connectionAttempt?.errorMessage && <p className="inline-hint">{data.connectionAttempt.errorMessage}</p>}<button className="primary" type="button" disabled={disabled || data.bot?.status !== "active"} onClick={() => void mutate("startConnection", {}, "Escolha seu grupo no Telegram e volte para confirmar.")}>{pending === "startConnection" ? "Preparando link…" : "Adicionar meu grupo"} <Icon name="arrow" size={15} /></button></div>}
                 {community && <div className="permission-list"><div><Icon name="check" size={17} />Bot adicionado ao grupo</div><div><Icon name="check" size={17} />Regras configuradas neste workspace</div><div><Icon name="check" size={17} />Decisões disponíveis no registro</div></div>}
               </section><section className="panel connection-steps"><h2>Como conectar</h2><p>Você não precisa informar token nem ID do chat.</p><ol><li><span>1</span><div><strong>Escolha seu grupo no Telegram</strong><p>Abra o convite do bot oficial.</p></div></li><li><span>2</span><div><strong>Dê as permissões necessárias</strong><p>Permita excluir mensagens e restringir membros.</p></div></li><li><span>3</span><div><strong>Confirme a conexão</strong><p>Volte para este painel e teste uma regra.</p></div></li></ol></section></div>

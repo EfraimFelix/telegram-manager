@@ -299,6 +299,8 @@ progress::-moz-progress-bar { border-radius: 6px; background: var(--accent); }
 .connected-community strong, .connected-community small { display: block; }
 .connected-community small { margin-top: 3px; }
 .connected-community .community-avatar { width: 39px; height: 39px; flex-basis: 39px; }
+.connection-error { margin-top: 20px; }
+.connection-error small { color: inherit; }
 .permission-list { display: grid; margin-top: 20px; }
 .permission-list > div { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 .permission-list svg { color: var(--accent); }
@@ -382,8 +384,8 @@ progress::-moz-progress-bar { border-radius: 6px; background: var(--accent); }
   .delete-confirm { margin-left: 0; }
   .community-hero { flex-wrap: wrap; }
   .community-hero > button { margin-left: 68px; }
-  .connected-community { flex-wrap: wrap; }
-  .connected-community > button { margin-left: 51px; }
+  .connected-community { display: grid; grid-template-columns: 39px minmax(0, 1fr); align-items: center; }
+  .connected-community > button, .connected-community > .status-pill { grid-column: 1 / -1; width: 100%; margin-left: 0; }
   .templates { grid-template-columns: minmax(0, 1fr); }
   .auth-page { grid-template-columns: minmax(0, 1fr); }
   .auth-story { min-height: auto; padding: 20px; border-right: 0; border-bottom: 1px solid var(--border); }

@@ -23,6 +23,6 @@ export async function POST(request: Request) {
 }
 
 function respond(error: unknown, event: string) {
-  if (!(error instanceof AppError)) console.error(JSON.stringify({ event, error: error instanceof Error ? error.name : "UnknownError" }));
+  if (!(error instanceof AppError)) console.error(JSON.stringify({ event, error: error instanceof Error ? error.constructor.name : "UnknownError" }));
   return errorResponse(error);
 }

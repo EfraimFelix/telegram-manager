@@ -11,8 +11,8 @@ export function json(value: unknown, status = 200) {
 
 export function errorResponse(error: unknown) {
   if (error instanceof AppError) return json({ error: { code: error.code, message: error.message } }, error.status);
-  if (error instanceof TelegramError) return json({ error: { code: "TELEGRAM_ERROR", message: error.retryable ? "Telegram is temporarily unavailable. Please try again." : "Telegram rejected this request. Check the bot token and group permissions." } }, error.retryable ? 503 : 400);
-  return json({ error: { code: "INTERNAL_ERROR", message: "The request could not be completed. Please try again." } }, 500);
+  if (error instanceof TelegramError) return json({ error: { code: "TELEGRAM_ERROR", message: error.retryable ? "O Telegram está temporariamente indisponível. Tente novamente." : "O Telegram recusou a solicitação. Confira as permissões do bot no grupo." } }, error.retryable ? 503 : 400);
+  return json({ error: { code: "INTERNAL_ERROR", message: "Não foi possível concluir a solicitação. Tente novamente em instantes." } }, 500);
 }
 
 export function checkOrigin(request: Request) {

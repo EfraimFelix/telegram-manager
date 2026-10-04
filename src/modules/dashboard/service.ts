@@ -27,6 +27,20 @@ function permissionError(chatType: string, bot: TelegramMember | undefined, user
   return null;
 }
 
+async function connectionStep<T>(stage: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof AppError)) {
+      // Keep credentials, chat identifiers and provider response bodies out of logs.
+      const rawCode = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      const code = typeof rawCode === "string" && /^[A-Z0-9_]{3,64}$/.test(rawCode) ? rawCode : undefined;
+      console.error(JSON.stringify({ event: "connection_confirmation_failed", stage, error: error instanceof Error ? error.constructor.name : "UnknownError", code }));
+    }
+    throw error;
+  }
+}
+
 export async function dashboardData(actor: Actor, organizationId: string): Promise<DashboardData> {
   const db = getDb();
   const month = monthStart();
@@ -120,17 +134,17 @@ async function confirmConnection(actor: Actor, organizationId: string, attemptId
   }
   if (!attempt.attempt.candidateExternalId || !attempt.attempt.telegramUserId) throw new AppError(409, "CONNECTION_PENDING", "Open the Telegram link and choose the group first.");
 
-  const token = await decryptToken(attempt.bot.encryptedToken);
-  const chat = await telegram<TelegramChat>(token, "getChat", { chat_id: attempt.attempt.candidateExternalId });
-  const botMember = await telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.bot.externalId) });
-  const userMember = await telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.attempt.telegramUserId) });
+  const token = await connectionStep("decrypt_bot_token", () => decryptToken(attempt.bot.encryptedToken));
+  const chat = await connectionStep("verify_group", () => telegram<TelegramChat>(token, "getChat", { chat_id: attempt.attempt.candidateExternalId! }));
+  const botMember = await connectionStep("verify_bot_permissions", () => telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.bot.externalId) }));
+  const userMember = await connectionStep("verify_user_permissions", () => telegram<TelegramMember>(token, "getChatMember", { chat_id: chat.id, user_id: Number(attempt.attempt.telegramUserId) }));
   const permission = permissionError(chat.type, botMember, userMember);
   if (permission) {
     await db.update(communityConnectionAttempts).set({ candidateName: chat.title ?? chat.username ?? "Telegram community", candidateUsername: chat.username, candidateChatType: chat.type, botIsAdmin: isAdmin(botMember), userIsAdmin: isAdmin(userMember), errorCode: permission.code, errorMessage: permission.message }).where(eq(communityConnectionAttempts.id, attemptId));
     throw new AppError(409, permission.code, permission.message);
   }
 
-  return db.transaction(async (tx) => {
+  return connectionStep("save_community", () => db.transaction(async (tx) => {
     await lockOrganization(tx, organizationId, actor);
     const [current] = await tx.select().from(communityConnectionAttempts).where(eq(communityConnectionAttempts.id, attemptId)).for("update");
     if (!current || current.state === "COMPLETED") return { ok: true, communityId: current?.communityId ?? null } as const;
@@ -145,7 +159,7 @@ async function confirmConnection(actor: Actor, organizationId: string, attemptId
     await tx.insert(moderationRules).values({ communityId: community.id, createdBy: actor.id, name: STARTER_RULE.name, ruleText: STARTER_RULE.ruleText, action: "WARN", actionDurationSeconds: null, deleteMessage: true, enabled: true });
     await tx.update(communityConnectionAttempts).set({ state: "COMPLETED", communityId: community.id, candidateName: chat.title ?? chat.username ?? "Telegram community", candidateUsername: chat.username, candidateChatType: chat.type, botIsAdmin: true, userIsAdmin: true, errorCode: null, errorMessage: null, consumedAt: new Date() }).where(eq(communityConnectionAttempts.id, attemptId));
     return { ok: true, communityId: community.id } as const;
-  });
+  }));
 }
 
 async function verifyModerationPermissions(organizationId: string, communityId: string) {

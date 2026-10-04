@@ -1,0 +1,70 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0;padding:22px;background:#eef2f8;color-scheme:light}</style></head><body><div id="tm-onboarding-mock" aria-label="Proposta de onboarding do Telegram Manager">
+  <style>
+    #tm-onboarding-mock { --tm-accent:#315db6; --tm-bg:light-dark(#f4f6fb,#171b25); --tm-surface:light-dark(#fff,#242a36); --tm-text:light-dark(#1e2838,#f2f5fa); --tm-muted:light-dark(#5e6b80,#b4bfce); --tm-line:light-dark(#dce2ec,#3d4655); --tm-soft:light-dark(#ecf1fb,#253653); color-scheme:light; max-width:390px; margin:0 auto; color:var(--tm-text); font:400 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #tm-onboarding-mock * { box-sizing:border-box; }
+    #tm-onboarding-mock .phone { background:var(--tm-bg); border:1px solid var(--tm-line); border-radius:22px; overflow:hidden; }
+    #tm-onboarding-mock .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--tm-surface); border-bottom:1px solid var(--tm-line); padding:15px 18px; }
+    #tm-onboarding-mock .brand { display:flex; align-items:center; gap:10px; font-weight:500; }
+    #tm-onboarding-mock .logo { width:31px; height:31px; display:grid; place-items:center; border-radius:8px; background:var(--tm-accent); color:white; font-size:21px; line-height:1; }
+    #tm-onboarding-mock .help { color:var(--tm-accent); font-weight:500; }
+    #tm-onboarding-mock main { padding:24px 18px 20px; }
+    #tm-onboarding-mock .eyebrow { color:var(--tm-accent); font-size:12px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
+    #tm-onboarding-mock h1 { font-size:24px; line-height:1.2; font-weight:500; margin:8px 0 7px; }
+    #tm-onboarding-mock p { margin:0; color:var(--tm-muted); }
+    #tm-onboarding-mock .progress-copy { display:flex; justify-content:space-between; margin:24px 0 8px; font-size:12px; font-weight:500; }
+    #tm-onboarding-mock .progress-copy span:last-child { color:var(--tm-muted); }
+    #tm-onboarding-mock .progress-track { height:5px; background:var(--tm-line); border-radius:99px; overflow:hidden; }
+    #tm-onboarding-mock .progress-fill { width:66.67%; height:100%; background:var(--tm-accent); border-radius:99px; }
+    #tm-onboarding-mock .community { display:flex; align-items:center; gap:12px; margin:20px 0 14px; padding:15px; background:var(--tm-surface); border:1px solid var(--tm-line); border-radius:14px; }
+    #tm-onboarding-mock .avatar { width:38px; height:38px; flex:none; display:grid; place-items:center; background:var(--tm-soft); border-radius:10px; color:var(--tm-accent); font-weight:500; }
+    #tm-onboarding-mock .community strong,#tm-onboarding-mock .rule strong { display:block; font-weight:500; }
+    #tm-onboarding-mock .community small { display:block; color:var(--tm-muted); font-size:12px; }
+    #tm-onboarding-mock .community .check { margin-left:auto; color:var(--tm-accent); font-size:18px; font-weight:500; }
+    #tm-onboarding-mock .rule { background:var(--tm-surface); border:1px solid var(--tm-line); border-radius:14px; padding:17px; }
+    #tm-onboarding-mock .rule-label { display:block; margin-bottom:9px; color:var(--tm-muted); font-size:12px; }
+    #tm-onboarding-mock .rule p { margin-top:5px; font-size:13px; }
+    #tm-onboarding-mock .test-label { display:block; margin:19px 0 7px; font-weight:500; }
+    #tm-onboarding-mock textarea { width:100%; min-height:86px; border:1px solid var(--tm-line); border-radius:11px; background:var(--tm-surface); color:var(--tm-text); padding:12px; resize:vertical; font:inherit; font-size:16px; }
+    #tm-onboarding-mock .primary { display:block; width:100%; min-height:46px; margin-top:12px; border:0; border-radius:10px; background:var(--tm-accent); color:#fff; font:500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #tm-onboarding-mock .hint { margin-top:9px; font-size:12px; text-align:center; }
+    #tm-onboarding-mock .result { margin-top:15px; border:1px solid var(--tm-line); border-radius:12px; background:var(--tm-surface); padding:14px; }
+    #tm-onboarding-mock .result strong { display:block; font-weight:500; }
+    #tm-onboarding-mock .result p { margin-top:5px; font-size:13px; }
+    #tm-onboarding-mock .result .tag { display:inline-block; margin-bottom:8px; padding:4px 8px; border-radius:5px; background:var(--tm-soft); color:var(--tm-accent); font-size:12px; font-weight:500; }
+    #tm-onboarding-mock .next { margin-top:14px; color:var(--tm-muted); font-size:12px; }
+    #tm-onboarding-mock .next b { color:var(--tm-text); font-weight:500; }
+    @media(max-width:340px){ #tm-onboarding-mock main { padding:19px 14px; } #tm-onboarding-mock .bar { padding:13px 14px; } }
+  </style>
+  <section class="phone">
+    <div class="bar"><div class="brand"><span class="logo" aria-hidden="true">↗</span><span>Telegram Manager</span></div><span class="help">Ajuda</span></div>
+    <main>
+      <div class="eyebrow">Seu primeiro resultado</div>
+      <h1>Veja a proteção em ação</h1>
+      <p>Seu grupo já está conectado. Teste uma mensagem para entender exatamente o que o bot faria.</p>
+      <div class="progress-copy"><span>2 de 3 · Testar proteção</span><span>Grupo conectado ✓</span></div>
+      <div class="progress-track" role="progressbar" aria-label="Etapas de ativação" aria-valuenow="2" aria-valuemin="0" aria-valuemax="3"><div class="progress-fill"></div></div>
+      <div class="community"><span class="avatar">E</span><span><strong>Efra Teste 2</strong><small>Bot administrador · pronto para testar</small></span><span class="check" aria-hidden="true">✓</span></div>
+      <div class="rule"><span class="rule-label">REGRA INICIAL · REVISE ANTES DE ATIVAR</span><strong>Publicidade e spam</strong><p>Sinalizar anúncios não solicitados; permitir links relevantes à conversa.</p></div>
+      <label class="test-label" for="tm-example">Mensagem de exemplo</label>
+      <textarea id="tm-example">Entre no meu canal e compre seguidores por R$ 29. Oferta só hoje!</textarea>
+      <button class="primary cursor-interaction" type="button" id="tm-run">Testar esta mensagem →</button>
+      <p class="hint">O teste não envia nada ao Telegram.</p>
+      <div class="result" id="tm-result" hidden aria-live="polite"><span class="tag">Simulação concluída</span><strong>O bot sinalizaria esta mensagem</strong><p>Motivo: anúncio não solicitado. A regra “Publicidade e spam” foi aplicada.</p></div>
+      <p class="next" id="tm-next" hidden><b>Próximo passo:</b> publique uma mensagem de teste no grupo e confira a decisão no Registro.</p>
+    </main>
+  </section>
+  <script>
+    (()=>{
+      const root=document.getElementById('tm-onboarding-mock');
+      const button=root.querySelector('#tm-run');
+      const result=root.querySelector('#tm-result');
+      const next=root.querySelector('#tm-next');
+      button.addEventListener('click',()=>{ result.hidden=false; next.hidden=false; button.textContent='Testar novamente'; });
+      const state={accent:'#315db6',progress:true};
+      function render(){root.style.setProperty('--tm-accent',state.accent);root.querySelector('.progress-copy').hidden=!state.progress;root.querySelector('.progress-track').hidden=!state.progress;}
+      render();
+      if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addColorPicker(state,'accent',{label:'Cor de destaque',reference:'--tm-accent'});tweak.addToggle(state,'progress',{label:'Mostrar progresso'});}
+    })();
+  </script>
+</div>
+</body></html>
