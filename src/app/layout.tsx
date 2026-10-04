@@ -4,12 +4,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Telegram Manager",
-  description: "Telegram group moderation management platform",
+  description: "Moderação de grupos do Telegram com regras claras e decisões transparentes.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="pt-BR">
       <body>{children}</body>
     </html>
   );

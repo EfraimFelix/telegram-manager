@@ -13,7 +13,7 @@ export default function SignIn() {
     if (pending) return;
     const fields = new FormData(event.currentTarget);
     const name = String(fields.get("name") ?? "").trim();
-    if (signup && !name) { setError("Please enter your name."); return; }
+    if (signup && !name) { setError("Informe seu nome."); return; }
     setPending(true); setError("");
     try {
       await request(`/api/auth/${signup ? "sign-up" : "sign-in"}/email`, {
@@ -23,25 +23,25 @@ export default function SignIn() {
     } catch (error) { setError(errorMessage(error)); setPending(false); }
   }
   return <main className="auth-page">
-    <section className="auth-story"><Link className="brand" href="/"><span className="brand-mark">↗</span> Telegram Manager</Link>
-      <div><p className="eyebrow">A little order. A better community.</p><h1>Good conversations<br />start with clear rules.</h1><p>Thoughtful moderation for your Telegram community. Your rules, a helping hand, and every decision in view.</p></div>
-      <p className="auth-footnote">Built for communities, with you in control.</p>
+    <section className="auth-story"><Link className="brand" href="/"><span className="brand-mark">↗</span><span className="brand-copy"><strong>Telegram Manager</strong><small>Moderação com clareza</small></span></Link>
+      <div><p className="eyebrow">SUA COMUNIDADE, SOB CONTROLE</p><h1>Boas conversas começam com regras claras.</h1><p>Acompanhe a moderação do seu grupo com decisões transparentes e ações definidas por você.</p></div>
+      <p className="auth-footnote">Feito para quem cuida de comunidades.</p>
     </section>
     <section className="auth-panel"><div className="auth-form">
-      <span className="badge">YOUR COMMUNITY, IN GOOD HANDS</span><h2>{signup ? "Make room for better conversations." : "Welcome back."}</h2>
-      <p>{signup ? "Create your free workspace to get started." : "Sign in to your moderation workspace."}</p>
+      <span className="eyebrow">TELEGRAM MANAGER</span><h2>{signup ? "Crie seu espaço." : "Bem-vindo de volta."}</h2>
+      <p>{signup ? "Comece com um workspace gratuito." : "Acesse o painel de moderação da sua comunidade."}</p>
       <form onSubmit={submit} aria-busy={pending}>
         <fieldset disabled={pending} className="form-stack">
-          {signup && <label>Your name<input name="name" autoComplete="name" required maxLength={100} /></label>}
-          <label>Email address<input name="email" type="email" autoComplete="email" placeholder="you@example.com" required maxLength={254} /></label>
-          <label>Password<input key={String(signup)} name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} minLength={signup ? 8 : 1} maxLength={128} required aria-describedby={signup ? "password-help" : undefined} /></label>
-          {signup && <small id="password-help">Use at least 8 characters.</small>}
+          {signup && <label>Seu nome<input name="name" autoComplete="name" required maxLength={100} /></label>}
+          <label>E-mail<input name="email" type="email" autoComplete="email" placeholder="voce@exemplo.com" required maxLength={254} /></label>
+          <label>Senha<input key={String(signup)} name="password" type="password" autoComplete={signup ? "new-password" : "current-password"} minLength={signup ? 8 : 1} maxLength={128} required aria-describedby={signup ? "password-help" : undefined} /></label>
+          {signup && <small id="password-help">Use pelo menos 8 caracteres.</small>}
           {error && <p className="notice error" role="alert">{error}</p>}
-          <button className="primary" type="submit">{pending ? "Please wait…" : signup ? "Create account →" : "Sign in →"}</button>
+          <button className="primary" type="submit">{pending ? "Aguarde…" : signup ? "Criar conta →" : "Entrar →"}</button>
         </fieldset>
       </form>
-      <p className="auth-switch">{signup ? "Already have an account?" : "New here?"} <button className="text-button" disabled={pending} onClick={() => { setSignup(!signup); setError(""); }}>{signup ? "Sign in" : "Create an account"}</button></p>
-      <div className="auth-plan"><strong>Start small. Stay in control.</strong><p>Free includes 1 community, 3 active rules, and 5,000 moderated messages per month.</p></div>
+      <p className="auth-switch">{signup ? "Já tem uma conta?" : "Ainda não tem conta?"} <button className="text-button" disabled={pending} onClick={() => { setSignup(!signup); setError(""); }}>{signup ? "Entrar" : "Criar conta"}</button></p>
+      <div className="auth-plan"><strong>Comece com o essencial.</strong><p>O plano gratuito inclui 1 comunidade, 3 regras ativas e 5.000 mensagens moderadas por mês.</p></div>
     </div></section>
   </main>;
 }

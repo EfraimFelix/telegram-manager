@@ -2,30 +2,53 @@
 
 import { useState } from "react";
 import { probability, type DashboardData, type DecisionState } from "./dashboard-api";
+import { Icon } from "./icon";
 
-const labels: Record<DecisionState, string> = { SKIPPED: "Skipped", NO_MATCH: "No match", REVIEW: "Review", MATCHED: "Matched" };
-const actionLabels = { WARN: "Warn", DELETE: "Delete", MUTE: "Mute", BAN: "Ban" } as const;
+const labels: Record<DecisionState, string> = { SKIPPED: "Ignorada", NO_MATCH: "Sem correspondência", REVIEW: "Revisar", MATCHED: "Regra acionada" };
+const actionLabels = { WARN: "Aviso", DELETE: "Exclusão", MUTE: "Silêncio", BAN: "Banimento" } as const;
+const actionStatusLabels: Record<string, string> = { PENDING: "pendente", SUCCESS: "concluída", FAILED: "falhou", SKIPPED: "ignorada" };
+export function reasonLabel(reason: string | undefined) {
+  if (!reason) return "Aguardando decisão de moderação.";
+  if (reason === "No rule reached the review threshold.") return "Nenhuma regra atingiu o limite para revisão.";
+  if (reason === "A rule is in the review band but no rule reached the match threshold.") return "Uma regra precisa de revisão, mas nenhuma atingiu o limite para aplicar uma ação.";
+  if (reason === "A rule matched without a disciplinary action.") return "Uma regra foi acionada sem ação disciplinar.";
+  const match = reason.match(/^Matched rules resolved to (WARN|MUTE|BAN) (directly|by warning progression)\.$/);
+  if (match) return "Regras acionadas: " + actionLabels[match[1] as keyof typeof actionLabels].toLowerCase() + (match[2] === "directly" ? " diretamente." : " pela progressão de avisos.");
+  return reason;
+}
 type FeedbackState = "NO_MATCH" | "REVIEW" | "MATCHED";
 
 type Props = {
   logs: DashboardData["recentLogs"];
   disabled: boolean;
+  initialFilter: DecisionState | "ALL";
   onFeedback: (decisionId: string, expectedState: FeedbackState) => Promise<boolean>;
 };
 
-export default function ModerationLog({ logs, disabled, onFeedback }: Props) {
-  const [filter, setFilter] = useState<DecisionState | "ALL">("ALL");
+export default function ModerationLog({ logs, disabled, initialFilter, onFeedback }: Props) {
+  const [filter, setFilter] = useState<DecisionState | "ALL">(initialFilter);
   const [saved, setSaved] = useState<Record<string, FeedbackState>>({});
   const visible = logs.filter(log => filter === "ALL" || log.decision?.state === filter);
-  return <section className="panel">
-    <div className="section-heading"><div><h2>Recent decisions</h2><p>Feedback records your judgment. It does not undo an action in Telegram.</p></div><label className="filter">Decision<select value={filter} onChange={event => setFilter(event.target.value as DecisionState | "ALL")}><option value="ALL">All decisions</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-    {!visible.length ? <div className="empty"><span className="empty-symbol" aria-hidden="true">◷</span><h3>{logs.length ? "No decisions match this filter." : "The conversation starts here."}</h3><p>{logs.length ? "Try another decision filter." : "Once moderation processes messages, you’ll see decisions and outcomes here."}</p></div> : <div className="log-list">{visible.map(log => {
-      const decision = log.decision; const recorded = saved[log.id] ?? log.feedback.at(-1)?.expectedState; const maximumProbability = log.evaluations.reduce<number | null>((maximum, item) => Math.max(maximum ?? 0, item.probability), null);
-      return <article className="log-entry" key={log.id}><div className="log-top"><span className={"badge " + (decision?.state.toLowerCase() ?? "")}>{decision ? labels[decision.state] : log.processingStatus.replaceAll("_", " ")}</span><time dateTime={log.receivedAt}>{new Date(log.receivedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time></div><p className="message-text">{log.text}</p><small className="message-meta">{log.communityName} · Telegram user {log.platformUserId ?? "unknown"}</small><p>{decision?.reason ?? "Waiting for a moderation decision."}</p>
-        {!!log.evaluations.length && <div className="evaluation-list" aria-label="Rule evaluations">{log.evaluations.map(evaluation => <div className="evaluation" key={evaluation.ruleId}><span>{evaluation.ruleName} · {evaluation.configuredAction.toLowerCase()} {evaluation.deleteMessage ? "· delete" : ""}</span><strong>{probability(evaluation.probability)}</strong></div>)}</div>}
-        <div className="decision-details"><span>Highest match probability <strong>{probability(maximumProbability)}</strong></span><span>Actions <strong>{log.actions.length ? log.actions.map(action => actionLabels[action.action] + " · " + action.status.toLowerCase()).join(", ") : "None"}</strong></span>{log.warning && <span>Warning <strong>#{log.warning.warningNumber}</strong></span>}</div>
-        {decision && decision.state !== "SKIPPED" && <div className="feedback"><span>{recorded ? "Feedback saved: " + labels[recorded] : "Was this decision right?"}</span>{[["Correct", decision.state], ["No match", "NO_MATCH"], ["Review", "REVIEW"]].map(([label, expectedState]) => <button className="secondary small" key={label} disabled={disabled} onClick={async () => { if (await onFeedback(decision.id, expectedState as FeedbackState)) setSaved(current => ({ ...current, [log.id]: expectedState as FeedbackState })); }}>{label}</button>)}</div>}
-      </article>;
-    })}</div>}
+
+  return <section className="panel log-panel">
+    <div className="section-heading log-heading"><div><h2>Atividade recente</h2><p>O retorno registra sua avaliação. Ele não desfaz uma ação no Telegram.</p></div><label className="filter">Mostrar<select value={filter} onChange={event => setFilter(event.target.value as DecisionState | "ALL")}><option value="ALL">Todas as decisões</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+    {!visible.length ? <div className="empty-state log-empty"><Icon name="log" size={26} /><h2>{logs.length ? "Nenhuma decisão neste filtro" : "As decisões aparecerão aqui"}</h2><p>{logs.length ? "Escolha outra classificação para ver o histórico." : "Quando o bot analisar mensagens, você verá o contexto e o resultado de cada uma."}</p></div> :
+      <div className="log-list">{visible.map(log => {
+        const decision = log.decision;
+        const recorded = saved[log.id] ?? log.feedback.at(-1)?.expectedState;
+        const maximumProbability = log.evaluations.reduce<number | null>((maximum, item) => Math.max(maximum ?? 0, item.probability), null);
+        return <article className="log-entry" key={log.id}>
+          <div className="log-top"><span className={"state-badge state-" + (decision?.state.toLowerCase() ?? "skipped")}>{decision ? labels[decision.state] : log.processingStatus.replaceAll("_", " ")}</span><time dateTime={log.receivedAt}>{new Date(log.receivedAt).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</time></div>
+          <p className="message-text">{log.text}</p>
+          <div className="log-meta"><span>{log.communityName}</span><span>Participante {log.platformUserId ? "· " + log.platformUserId.slice(-4) : "não identificado"}</span></div>
+          <p className="log-reason">{reasonLabel(decision?.reason)}</p>
+          <details className="log-details"><summary>Ver contexto e retorno <Icon name="arrow" size={15} /></summary>
+            {log.text.length > 180 && <div className="log-full-message"><strong>Mensagem completa</strong><p>{log.text}</p></div>}
+            {!!log.evaluations.length && <div className="evaluation-list" aria-label="Avaliações das regras">{log.evaluations.map(evaluation => <div className="evaluation" key={evaluation.ruleId}><span>{evaluation.ruleName} · {actionLabels[evaluation.configuredAction]}{evaluation.deleteMessage ? " · excluir mensagem" : ""}</span><strong>{probability(evaluation.probability)}</strong></div>)}</div>}
+            <div className="decision-details"><span>Maior probabilidade <strong>{probability(maximumProbability)}</strong></span><span>Ações <strong>{log.actions.length ? log.actions.map(action => actionLabels[action.action] + " · " + (actionStatusLabels[action.status] ?? action.status.toLowerCase())).join(", ") : "Nenhuma"}</strong></span>{log.warning && <span>Aviso <strong>#{log.warning.warningNumber}</strong></span>}</div>
+            {decision && decision.state !== "SKIPPED" && <div className="feedback"><strong>{recorded ? "Retorno salvo: " + labels[recorded] : "Qual deveria ser a classificação?"}</strong><div>{(["NO_MATCH", "REVIEW", "MATCHED"] as const).map(expectedState => <button className={"secondary small" + (recorded === expectedState ? " is-selected" : "")} type="button" key={expectedState} disabled={disabled} onClick={async () => { if (await onFeedback(decision.id, expectedState)) setSaved(current => ({ ...current, [log.id]: expectedState })); }}>{labels[expectedState]}</button>)}</div><small>Seu retorno não altera a ação já executada no Telegram.</small></div>}
+          </details>
+        </article>;
+      })}</div>}
   </section>;
 }
